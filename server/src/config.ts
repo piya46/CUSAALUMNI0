@@ -1,0 +1,51 @@
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
+
+dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)), quiet: true } as dotenv.DotenvConfigOptions);
+
+const schema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+  APP_ORIGIN: z.url().default('http://localhost:5173'),
+  DB_HOST: z.string().default('203.170.190.137'), DB_PORT: z.coerce.number().int().default(3306),
+  DB_NAME: z.string().default('cusa_identity'), DB_USER: z.string().default(''), DB_PASSWORD: z.string().default(''),
+  DB_TLS: z.enum(['true', 'false']).default('true'), DB_CA_FILE: z.string().default(''),
+  DB_CONNECTION_LIMIT:z.coerce.number().int().min(1).max(100).default(20),
+  DB_QUEUE_LIMIT:z.coerce.number().int().min(1).max(1000).default(100),
+  INTROSPECTION_CACHE_SECONDS:z.coerce.number().int().min(0).max(5).default(5),
+  SESSION_SECRET: z.string().default(''), ENCRYPTION_KEY: z.string().default(''),
+  GOOGLE_CLIENT_ID: z.string().default(''), GOOGLE_CLIENT_SECRET: z.string().default(''),
+  MAIL_MODE: z.enum(['gmail_oauth', 'workspace_service_account', 'disabled']).default('disabled'),
+  GMAIL_SENDER: z.string().default(''), GMAIL_REFRESH_TOKEN: z.string().default(''),
+  GMAIL_CLIENT_ID: z.string().default(''), GMAIL_CLIENT_SECRET: z.string().default(''),
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().default(''), GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z.string().default(''),
+  SESSION_HOURS: z.coerce.number().int().min(1).max(24).default(8),
+  OTP_MINUTES: z.coerce.number().int().min(1).max(10).default(5),
+  TRUST_PROXY: z.enum(['false', 'loopback', '1']).default('false'),
+  REDIS_URL: z.string().default(''),
+});
+const env = schema.parse(process.env);
+const origin = new URL(env.APP_ORIGIN);
+if (origin.origin !== env.APP_ORIGIN || !['http:', 'https:'].includes(origin.protocol)) throw new Error('APP_ORIGIN must be an HTTP(S) origin without a trailing slash or path');
+const mailConfigured = env.MAIL_MODE !== 'disabled' && z.email().safeParse(env.GMAIL_SENDER).success && (env.MAIL_MODE === 'gmail_oauth' ? Boolean(env.GMAIL_REFRESH_TOKEN && (env.GMAIL_CLIENT_ID || env.GOOGLE_CLIENT_ID) && (env.GMAIL_CLIENT_SECRET || env.GOOGLE_CLIENT_SECRET)) : Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY));
+if (env.MAIL_MODE === 'workspace_service_account' && /@(gmail|googlemail)\.com$/i.test(env.GMAIL_SENDER)) throw new Error('Personal Gmail requires MAIL_MODE=gmail_oauth; service account delegation requires Google Workspace');
+const googleConfigured = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+const configured = Boolean(googleConfigured && mailConfigured && env.DB_USER && env.DB_PASSWORD && env.SESSION_SECRET.length >= 32 && Buffer.from(env.ENCRYPTION_KEY, 'base64').length === 32);
+export function assertServerConfiguration() {
+  if (env.NODE_ENV === 'production' && (!configured || origin.protocol !== 'https:' || env.DB_TLS !== 'true')) throw new Error('Production requires complete credentials, HTTPS APP_ORIGIN, 32-byte ENCRYPTION_KEY, SESSION_SECRET >=32 characters, and verified DB TLS');
+}
+export const config = {
+  nodeEnv: env.NODE_ENV, port: env.PORT, appOrigin: env.APP_ORIGIN,
+  dbHost: env.DB_HOST, dbPort: env.DB_PORT, dbName: env.DB_NAME, dbUser: env.DB_USER, dbPassword: env.DB_PASSWORD, dbTls: env.DB_TLS === 'true', dbCaFile: env.DB_CA_FILE,
+  sessionSecret: env.SESSION_SECRET, encryptionKey: env.ENCRYPTION_KEY,
+  googleClientId: env.GOOGLE_CLIENT_ID, googleClientSecret: env.GOOGLE_CLIENT_SECRET,
+  mailMode: env.MAIL_MODE, gmailSender: env.GMAIL_SENDER, gmailRefreshToken: env.GMAIL_REFRESH_TOKEN,
+  gmailClientId: env.GMAIL_CLIENT_ID || env.GOOGLE_CLIENT_ID, gmailClientSecret: env.GMAIL_CLIENT_SECRET || env.GOOGLE_CLIENT_SECRET,
+  googleServiceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL, googleServiceAccountPrivateKey: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  sessionHours: env.SESSION_HOURS, otpMinutes: env.OTP_MINUTES, configured, googleConfigured, mailConfigured,
+  trustProxy: env.TRUST_PROXY === '1' ? 1 : env.TRUST_PROXY === 'loopback' ? 'loopback' : false,
+  secureCookies: origin.protocol === 'https:',
+  redisUrl: env.REDIS_URL,
+  dbConnectionLimit:env.DB_CONNECTION_LIMIT,dbQueueLimit:env.DB_QUEUE_LIMIT,introspectionCacheSeconds:env.INTROSPECTION_CACHE_SECONDS,
+};

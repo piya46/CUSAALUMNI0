@@ -1,0 +1,46 @@
+.auth-page { min-height: 100svh; display: flex; flex-direction: column; background: #f7f8f6; color: #203b32; padding: 64px 24px 24px; }
+.auth-main { width: 100%; max-width: 420px; margin: auto; padding: 24px 0 64px; }
+.auth-brand { display: flex; justify-content: center; margin-bottom: 30px; }
+.auth-brand .brand { gap: 11px; }
+.auth-brand .brand-mark { width: 38px; height: 40px; background: #e5eee6; color: #315f49; border-radius: 11px; }
+.auth-brand .brand strong { font-size: 23px; letter-spacing: -.8px; font-weight: 650; }
+.auth-card { padding: 36px 32px 30px; background: #fff; border: 1px solid #e3e8e1; border-radius: 16px; box-shadow: 0 6px 24px #203b3204; text-align: center; }
+.auth-card h1 { font-size: 25px; line-height: 1.5; font-weight: 600; letter-spacing: -.7px; }
+.auth-description { margin: 8px 0 28px; color: #727d76; font-size: 13px; line-height: 1.8; }
+.auth-google { width: 100%; min-height: 50px; padding: 12px 16px; display: flex; align-items: center; justify-content: center; gap: 12px; border: 1px solid #dce2da; border-radius: 8px; background: white; color: #263b30; font-size: 13px; font-weight: 500; transition: background .15s, border-color .15s; }
+.auth-google svg:last-child { margin-left: auto; color: #859185; }
+.auth-google:not(:disabled):hover { background: #f6f8f4; border-color: #a9bbab; }
+.auth-google:disabled { opacity: .6; }
+.auth-note { display: flex; align-items: flex-start; justify-content: center; gap: 7px; font-size: 11px; color: #7a847d; line-height: 1.9; margin: 24px 0 0; }
+.auth-note svg { margin-top: 3px; }
+.auth-availability { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0 0; border-top: 1px solid #edf0ea; margin-top: 24px; font-size: 11px; color: #858679; text-align: left; }
+.auth-availability button { padding: 5px; display: inline-flex; border-radius: 5px; }
+.auth-demo { text-align: center; margin-top: 24px; }
+.auth-demo button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; padding: 5px; color: #53705b; }
+.auth-demo p { color: #91988f; font-size: 10px; margin-top: 2px; }
+.auth-footer { text-align: center; color: #949c92; font-size: 10px; letter-spacing: .1px; }
+.auth-application { display: flex; align-items: center; gap: 13px; background: #f6f8f4; border: 1px solid #e8ede4; border-radius: 9px; padding: 14px; text-align: left; margin-bottom: 28px; }
+.auth-application-icon { display: grid; place-items: center; width: 38px; height: 38px; background: #e5edde; color: #607c56; border-radius: 8px; flex-shrink: 0; }
+.auth-application div { min-width: 0; }
+.auth-application span:not(.auth-application-icon) { display: block; color: #7b8972; font-size: 10px; }
+.auth-application strong { display: block; color: #3b5631; font-size: 14px; overflow-wrap: anywhere; }
+.auth-application small { display: block; color: #819076; font-size: 10px; overflow-wrap: anywhere; }
+.auth-return-note { color: #8a9583; font-size: 11px; line-height: 1.9; margin-top: 20px; overflow-wrap: anywhere; }
+.auth-state-icon { color: #8e9f7e; margin-bottom: 18px; }
+.auth-step { color: #839176; font-size: 11px; margin-bottom: 8px; }
+.auth-email { border: 1px solid #e6ebdf; background: #f8faf5; color: #657952; border-radius: 7px; padding: 9px 12px; margin: -8px 0 24px; font-size: 12px; overflow-wrap: anywhere; }
+.auth-card form { margin-top: 24px; text-align: left; }
+.auth-card .field { font-size: 12px; }
+.auth-card .field input { font-size: 16px; padding: 12px; background: white; color: #324827; }
+.auth-card .field input.auth-otp { text-align: center; font-size: 24px; letter-spacing: 8px; }
+.auth-card .button { font-size: 12px; min-height: 44px; white-space: normal; }
+.auth-text-button { display: block; margin: 18px auto 0; padding: 4px; font-size: 12px; color: #657e52; text-decoration: underline; text-underline-offset: 3px; }
+.auth-success { color: #537e4d; font-size: 11px; margin-top: 12px; }
+.auth-card .inline-error { text-align: left; font-size: 12px; margin-bottom: 20px; }
+.sso-resume { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; padding: 12px; background: #eef3e8; font-size: 12px; }
+@media (max-width: 480px) {
+  .auth-page { padding: 28px 20px 20px; }
+  .auth-main { padding: 20px 0 40px; }
+  .auth-card { padding: 30px 24px 26px; border-radius: 13px; }
+  .auth-brand { margin-bottom: 26px; }
+}

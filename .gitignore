@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*service-account*.json
+coverage/
+.DS_Store
+playwright-report/
+test-results/
+*.tsbuildinfo
