@@ -14,6 +14,8 @@ export const paginationSchema = z.object({
 const dateFilter = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
 const emailFilter = z.string().trim().toLowerCase().max(254).email();
 export const auditFilterSchema = paginationSchema.extend({
+  page: z.literal('1').default('1').transform(Number),
+  cursor:z.string().max(768).regex(/^[A-Za-z0-9_-]+$/).optional(),
   event: z.string().trim().min(1).max(100).optional(),
   email: emailFilter.optional(),
   actor_email: emailFilter.optional(),
@@ -38,7 +40,7 @@ export const auditFilterSchema = paginationSchema.extend({
   const start = value.startDate ?? value.start_date;
   const end = value.endDate ?? value.end_date;
   return {
-    page: value.page, limit: value.limit, search: value.search,
+    page: value.page, limit: value.limit, search: value.search,cursor:value.cursor,
     event: value.event, email: value.email ?? value.actor_email, status: value.status,
     startAt: start ? new Date(start) : undefined,
     // Date-only values cover the entire UTC day; timestamps are inclusive to millisecond precision.

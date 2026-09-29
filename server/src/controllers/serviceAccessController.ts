@@ -13,7 +13,7 @@ export const membershipSchema = z.object({
   department: text(150).default(''), roleIds: z.array(idSchema).min(1).max(20).refine(ids => new Set(ids).size === ids.length),
 }).strict();
 export const profileSchema = z.object({ firstName: text(100), lastName: text(100) }).strict();
-const actor = (req: Request) => ({ userId: req.identity!.userId, email: req.identity!.email });
+const actor = (req: Request) => ({ userId: req.identity!.userId, email: req.identity!.email,sessionId:req.identity!.sessionId });
 const writer = (req: Request): import('../models/adminModel.js').AuditWriter => (conn, event, target, metadata) => audit(req, event, target, metadata, conn);
 const appId = (req: Request) => idSchema.parse(req.params.applicationId);
 

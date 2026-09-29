@@ -181,7 +181,7 @@ describe('admin MariaDB integration', { skip: !enabled, concurrency: false }, ()
     [randomUUID(), actor.email, event, item.status, actor.userId, JSON.stringify({ integrationRun: run }), item.createdAt]);
     const filtered = await admin.listAudit({ page: 1, limit: 1, search: run, event, email: actor.email, status: 'failure',
       startAt: new Date('2026-01-02T00:00:00Z'), endBefore: new Date('2026-01-03T00:00:00Z') });
-    assert.deepEqual(filtered.meta, { total: 1, totalPages: 1, currentPage: 1, limit: 1 });
+    assert.equal(filtered.meta.hasMore,false);assert.equal(filtered.meta.nextCursor,null);assert.equal(filtered.meta.limit,1);
     assert.equal(filtered.events[0].status, 'failure');
     assert.equal(filtered.events[0].sessionId, actor.userId);
     assert.equal(filtered.events[0].userAgent, 'admin-integration-test');

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { ArrowRight, CircleAlert, Globe2, LockKeyhole, Mail, RefreshCw } from 'lucide-react';
-import { api } from '../models/api';
-import type { Identity } from '../models/types';
+import { MfaResetRequest } from './MfaReset';
+import { OtpInput } from '../components/OtpInput';
+import { api, ApiError } from '../models/api';
+import type { Identity, OtpState } from '../models/types';
 import type { LoginContext } from '../models/login';
 import { Brand } from '../components/ui';
 import { LegalLinks } from '../components/LegalLinks';
@@ -42,14 +44,22 @@ export function ContinueLogin({ identity, context, denied = false, onLogout }: {
 export function Mfa({ identity, context, onVerified, onLogout }: { identity: Identity; context: LoginContext | null; onVerified: () => Promise<void>; onLogout: () => Promise<void> }) {
   const isTotp = identity.mfaMethod === 'totp';
   const [recovery, setRecovery] = useState(false);
-  const [code, setCode] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [sent, setSent] = useState(false);
-  async function send() { setBusy(true); setError(''); try { await api('/auth/otp/send', 'POST', {}); setSent(true); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
-  async function verify(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await api(`/auth/${recovery ? 'recovery' : isTotp ? 'totp' : 'otp'}/verify`, 'POST', { code }); await onVerified(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
+  const [reset,setReset]=useState(false);
+  const [code, setCode] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [sent, setSent] = useState(Boolean(identity.otp?.reference));
+  const [otp,setOtp]=useState<OtpState|undefined>(identity.otp);
+  const [deadline,setDeadline]=useState(()=>Date.now()+(identity.otp?.retryAfter??0)*1000);
+  const [now,setNow]=useState(Date.now());
+  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),500);return()=>clearInterval(timer);},[]);
+  const remaining=Math.max(0,Math.ceil((deadline-now)/1000));
+  async function send() { setBusy(true); setError(''); try { const next=await api<OtpState>('/auth/otp/send', 'POST', {});setOtp(next);setDeadline(Date.now()+next.retryAfter*1000);setNow(Date.now());setCode('');setSent(true); } catch (e) { setError((e as Error).message); if(e instanceof ApiError&&e.retryAfter){setDeadline(Date.now()+e.retryAfter*1000);setNow(Date.now());} } finally { setBusy(false); } }
+  async function verify(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await api(`/auth/${recovery ? 'recovery' : isTotp ? 'totp' : 'otp'}/verify`, 'POST', { code,...(!isTotp&&!recovery?{reference:otp?.reference}:{}) }); await onVerified(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
   return <AuthLayout><ApplicationContext context={context} /><p className="auth-step">ขั้นตอนที่ 2 จาก 2</p><h1>ยืนยันว่าเป็นคุณ</h1><p className="auth-description">{recovery ? 'กรอก Recovery code ที่ยังไม่เคยใช้' : isTotp ? 'กรอกรหัส 6 หลักจากแอป Authenticator' : 'รับรหัสยืนยัน 6 หลักผ่านอีเมลของคุณ'}</p><div className="auth-email">{identity.user.email}</div>
     {error && <div className="inline-error" role="alert">{error}</div>}
-    {!isTotp && <><button className="button secondary full-width" disabled={busy} onClick={send}><Mail size={16} />{sent ? 'ส่งรหัสอีกครั้ง' : 'ส่งรหัสไปยังอีเมล'}</button>{sent && <p className="auth-success" role="status">ส่งรหัสแล้ว กรุณาตรวจสอบกล่องจดหมายและสแปม</p>}</>}
-    <form onSubmit={verify}><label className="field">{recovery ? 'Recovery code' : 'รหัสยืนยัน'}<input className={recovery ? '' : 'auth-otp'} inputMode={recovery ? 'text' : 'numeric'} autoComplete="one-time-code" pattern={recovery ? undefined : '[0-9]{6}'} maxLength={recovery ? 64 : 6} placeholder={recovery ? 'Recovery code' : '000000'} value={code} onChange={e => setCode(recovery ? e.target.value : e.target.value.replace(/\D/g, ''))} required autoFocus /></label><button className="button primary full-width" disabled={busy || (recovery ? !code.trim() : code.length !== 6)}>{busy ? 'กำลังตรวจสอบ…' : 'ยืนยันและเข้าสู่ระบบ'}<ArrowRight size={16} /></button></form>
+    {!isTotp && <><button className="button secondary full-width" disabled={busy||remaining>0} onClick={send}><Mail size={16} />{remaining>0?`ส่งใหม่ได้ใน ${remaining} วินาที`:sent ? 'ส่งรหัสอีกครั้ง' : 'ส่งรหัสไปยังอีเมล'}</button>{sent && <p className="auth-success" role="status">ส่งรหัสแล้ว กรุณาตรวจสอบกล่องจดหมายและสแปม</p>}</>}
+    {!isTotp&&otp?.reference&&<p className="otp-reference">Ref: <strong>{otp.reference}</strong><br/>ใช้รหัสจากอีเมลที่มี Ref ตรงกัน</p>}
+    <form onSubmit={verify}>{recovery?<label className="field">{recovery ? 'Recovery code' : 'รหัสยืนยัน'}<input className={recovery ? '' : 'auth-otp'} inputMode={recovery ? 'text' : 'numeric'} autoComplete="one-time-code" pattern={recovery ? undefined : '[0-9]{6}'} maxLength={recovery ? 64 : 6} placeholder={recovery ? 'Recovery code' : '000000'} value={code} onChange={e => setCode(recovery ? e.target.value : e.target.value.replace(/\D/g, ''))} required autoFocus /></label>:<OtpInput value={code} onChange={setCode} autoFocus disabled={busy}/>}<button className="button primary full-width" disabled={busy || (recovery ? !code.trim() : code.length !== 6)||(!isTotp&&!otp?.reference)}>{busy ? 'กำลังตรวจสอบ…' : 'ยืนยันและเข้าสู่ระบบ'}<ArrowRight size={16} /></button></form>
     {isTotp && <button className="auth-text-button" disabled={busy} onClick={() => { setRecovery(!recovery); setCode(''); setError(''); }}>{recovery ? 'ใช้รหัสจาก Authenticator' : 'ใช้ Recovery code'}</button>}
+    {isTotp&&<><button className="auth-text-button" onClick={()=>setReset(!reset)}>{reset?'ปิดคำขอเปลี่ยน MFA':'ไม่มีเครื่องเดิมและ Recovery code'}</button>{reset&&<MfaResetRequest/>}</>}
     <button className="auth-text-button" onClick={() => void onLogout()} disabled={busy}>ใช้บัญชีอื่น</button><p className="auth-note"><LockKeyhole size={13} />ห้ามแชร์รหัสยืนยันให้ผู้อื่น</p>
   </AuthLayout>;
 }

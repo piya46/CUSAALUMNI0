@@ -1,0 +1,10 @@
+.otp-field { border: 0; padding: 0; margin: 0 0 22px; min-width: 0; text-align: left; }
+.otp-field legend { font-size: 12px; color: #526454; margin-bottom: 10px; }
+.otp-digits { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
+.otp-digits input { width: 100%; min-width: 0; height: 52px; border: 1px solid #cad5c9; border-radius: 9px; background: #fff; color: #203b32; font-size: 24px; font-weight: 600; text-align: center; padding: 0; caret-color: #315f49; }
+.otp-digits input:focus { outline: 3px solid #315f4930; border-color: #315f49; }
+.otp-digits input:disabled { background: #f4f6f2; }
+.otp-reference { padding: 10px; margin-top: 14px; color: #4b644b; font-size: 12px; background: #f6f8f3; border-radius: 8px; }
+.otp-reference strong { font-family: monospace; letter-spacing: 2px; }
+.otp-cooldown { color: #667460; font-size: 12px; margin-top: 10px; }
+@media(max-width:380px) { .otp-digits { gap: 5px; } .otp-digits input { height: 46px; font-size: 22px; } }

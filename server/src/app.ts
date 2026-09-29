@@ -5,6 +5,8 @@ import { rateLimit as localRateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { auditAvailability } from './middleware/auditAvailability.js';
+import { requestContext, securityFailure } from './middleware/requestContext.js';
 import { config,assertServerConfiguration } from './config.js';
 import { attachIdentity, csrfProtection, HttpError, requireConfigured, audit } from './middleware/security.js';
 import { authRouter } from './routes/authRoutes.js';
@@ -19,9 +21,16 @@ export function createApp() {
   assertServerConfiguration();
   const app=express();
   app.disable('x-powered-by'); app.set('trust proxy',config.trustProxy);
-  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'data:','https://lh3.googleusercontent.com'],connectSrc:["'self'"],frameAncestors:["'none'"],formAction:["'self'"],upgradeInsecureRequests:config.secureCookies?[]:null}},crossOriginEmbedderPolicy:false,strictTransportSecurity:config.secureCookies?{maxAge:31536000,includeSubDomains:true}:false}));
+  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'data:','blob:','https://lh3.googleusercontent.com'],connectSrc:["'self'"],frameAncestors:["'none'"],formAction:["'self'"],upgradeInsecureRequests:config.secureCookies?[]:null}},crossOriginEmbedderPolicy:false,strictTransportSecurity:config.secureCookies?{maxAge:31536000,includeSubDomains:true}:false}));
+  app.use(requestContext);
   app.use('/api',(_req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Pragma','no-cache');next();});
-  app.use('/api',localRateLimit({windowMs:60_000,limit:180,standardHeaders:'draft-8',legacyHeaders:false,message:{error:'คำขอมากเกินไป กรุณารอสักครู่',code:'RATE_LIMITED'}}));
+  const coarseLimit=(limit:number)=>localRateLimit({windowMs:60_000,limit,standardHeaders:'draft-8',legacyHeaders:false,
+    handler:(req,res)=>{securityFailure(req,'LOCAL_RATE_LIMIT');res.status(429).json({error:'คำขอมากเกินไป กรุณารอสักครู่',code:'RATE_LIMITED',requestId:req.context?.requestId});}});
+  const browserLimit=coarseLimit(180), machineLimit=coarseLimit(12000);
+  app.use('/api',(req,res,next)=>{
+    if(['/health','/ready'].includes(req.path)) return next();
+    return ['/sso/token','/sso/introspect'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
+  });
   app.use(express.json({limit:'16kb'}));
   app.use(express.urlencoded({extended:false,limit:'16kb'}));
   app.use(cookieParser());
@@ -38,7 +47,7 @@ export function createApp() {
   app.use('/api/install',createInstallRouter());
   // Setup mode keeps all authentication and service APIs closed until the operator restarts.
   if (config.installEnabled) app.use('/api', (_req,res) => res.status(503).json({error:'ระบบอยู่ระหว่างติดตั้ง กรุณาลองใหม่ภายหลัง',code:'INSTALL_IN_PROGRESS'}));
-  app.use('/api',attachIdentity,csrfProtection);
+  app.use('/api',auditAvailability,attachIdentity,csrfProtection);
   app.use('/api/auth',authRouter); app.use('/api/admin',adminRouter); app.use('/api/sso',requireConfigured,ssoRouter);
   app.use('/api',(_req,res)=>res.status(404).json({error:'ไม่พบ API',code:'NOT_FOUND'}));
   const webDir=fileURLToPath(new URL('../../web/dist',import.meta.url));
@@ -49,11 +58,13 @@ export function createApp() {
   });
   if (existsSync(webDir)) { app.use(express.static(webDir,{index:false,maxAge:'1h'})); app.get('/{*path}',(req,res)=>{res.setHeader('Cache-Control',/^\/install\/?$/i.test(req.path)?'no-store':'no-cache');res.sendFile(`${webDir}/index.html`);}); }
   app.use(async (error:unknown,req:express.Request,res:express.Response,_next:express.NextFunction)=>{
-    if (config.configured && !config.installEnabled && !req.path.startsWith('/api/install')) {
+    const reason=error instanceof HttpError ? error.code ?? `HTTP_${error.status}` : error instanceof z.ZodError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
+    securityFailure(req,reason);
+    if (config.configured && !config.installEnabled && !req.auditRecorded && !req.path.startsWith('/api/install') && !(error instanceof HttpError && [401,429,503].includes(error.status))) {
       await audit(req,'http.request.failure',req.path.slice(0,255),{failure_reason:error instanceof HttpError ? error.code ?? `HTTP_${error.status}` : error instanceof z.ZodError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR',method:req.method}).catch(()=>{console.error('Audit enqueue failed');});
     }
     if (error instanceof z.ZodError) return res.status(400).json({error:error.issues[0]?.message ?? 'ข้อมูลไม่ถูกต้อง',code:'VALIDATION_ERROR'});
-    if (error instanceof HttpError) return res.status(error.status).json({error:error.message,code:error.code});
+    if (error instanceof HttpError) return res.status(error.status).json({error:error.message,code:error.code,requestId:req.context?.requestId});
     if (error instanceof SyntaxError && 'body' in error) return res.status(400).json({error:'JSON ไม่ถูกต้อง',code:'VALIDATION_ERROR'});
     // Log only a safe classification; never OAuth responses, cookies, OTPs or credentials.
     console.error('Request failed:',error instanceof Error ? error.name : 'UnknownError');

@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin, csrfProtection } from '../middleware/security.js';
+import { requireAuth, requireAdmin, requireRecentAdminMfa, requireFreshMfa, rateLimit, csrfProtection } from '../middleware/security.js';
 import * as controller from '../controllers/adminController.js';
 
+import * as reset from '../controllers/mfaResetController.js';
 import * as access from '../controllers/serviceAccessController.js';
 
 export const adminRouter = Router();
-adminRouter.use(requireAuth, requireAdmin, csrfProtection);
+adminRouter.use(requireAuth, requireAdmin, requireRecentAdminMfa, csrfProtection);
 adminRouter.get('/overview', controller.overview);
 adminRouter.get('/users', controller.users);
 adminRouter.delete('/users/:id', controller.deleteUser);
@@ -28,3 +29,7 @@ adminRouter.delete('/applications/:applicationId/roles/:roleId', access.deleteRo
 adminRouter.get('/applications/:applicationId/members', access.members);
 adminRouter.put('/applications/:applicationId/members/:userId', access.saveMember);
 adminRouter.delete('/applications/:applicationId/members/:userId', access.deleteMember);
+
+adminRouter.get('/mfa-resets',reset.list);
+adminRouter.get('/mfa-resets/:id/evidence',requireFreshMfa,rateLimit('evidence-view',30,60),reset.evidence);
+adminRouter.post('/mfa-resets/:id/decision',requireFreshMfa,reset.decide);

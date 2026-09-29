@@ -1,8 +1,10 @@
+import { auditContext, securityFailure } from '../middleware/requestContext.js';
 import { randomInt } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { config } from '../config.js';
+import { ssoModel } from '../models/ssoModel.js';
 import * as model from '../models/authModel.js';
 import { randomToken, safeEqual } from '../services/crypto.js';
 import { createHash } from 'node:crypto';
@@ -18,7 +20,7 @@ export function safeReturnTo(value: unknown): string {
 export function status(_req: Request, res: Response) { res.json({configured:config.configured,googleConfigured:config.googleConfigured,mailConfigured:config.mailConfigured}); }
 export async function me(req: Request, res: Response) {
   const s = req.identity!;
-  res.json({ user:{id:s.userId,email:s.email,name:s.name,firstName:s.firstName??'',lastName:s.lastName??'',avatar:s.avatar,role:s.role,totpEnabled:s.totpEnabled},csrfToken:s.csrfToken,requiresMfa:s.kind==='pending',status:s.kind==='pending'?'mfa_required':'authenticated',mfaMethod:s.kind==='pending'?(s.totpEnabled?'totp':'email'):s.mfaMethod,recoveryCodesRemaining:s.kind==='full'?await model.recoveryCodesRemaining(s.userId):undefined });
+  res.json({ user:{id:s.userId,email:s.email,name:s.name,firstName:s.firstName??'',lastName:s.lastName??'',avatar:s.avatar,role:s.role,totpEnabled:s.totpEnabled},csrfToken:s.csrfToken,requiresMfa:s.kind==='pending',status:s.kind==='pending'?'mfa_required':'authenticated',mfaMethod:s.kind==='pending'?(s.totpEnabled?'totp':'email'):s.mfaMethod,otp:s.kind==='pending'&&!s.totpEnabled?await model.otpState(s.sessionId):undefined,adminMfaRequired:s.role==='admin'&&(!s.totpEnabled||s.mfaMethod!=='totp'),recoveryCodesRemaining:s.kind==='full'?await model.recoveryCodesRemaining(s.userId):undefined });
 }
 export async function googleStart(req: Request, res: Response) {
   const state=randomToken(),browser=randomToken(),nonce=randomToken(),verifier=randomToken(48);
@@ -45,14 +47,18 @@ export async function googleCallback(req: Request, res: Response) {
     const nonce=(p as (typeof p & {nonce?:string}))?.nonce;
     if (!p?.sub || !p.email || p.email_verified!==true || !nonce || !safeEqual(nonce,flow.nonce)) throw new Error('Invalid Google identity');
     const email=z.email().max(254).parse(p.email.toLowerCase());
-    const session=await model.startGoogleSession({sub:p.sub,email,name:(p.name || email).slice(0,255),firstName:(p.given_name??'').slice(0,100),lastName:(p.family_name??'').slice(0,100),avatar:p.picture?.startsWith('https://')?p.picture.slice(0,2048):null},req.cookies?.[sessionCookie],(conn,userId,sessionId)=>model.recordAudit({actorId:userId,actorEmail:email,sessionId,status:'success',userAgent:(req.get('user-agent')??'').slice(0,512),event:'auth.google.success',target:userId,ip:req.ip??'unknown',metadata:{}},conn));
+    const destination=new URL(returnTo||'/login',config.appOrigin).searchParams;
+    const appId=destination.get('client_id');
+    const application=appId&&z.uuid().safeParse(appId).success?await ssoModel.getApplication(appId):null;
+    const applicationId=application?.redirectUri===destination.get('redirect_uri')?application?.id:undefined;
+    const session=await model.startGoogleSession({sub:p.sub,email,applicationId,name:(p.name || email).slice(0,255),firstName:(p.given_name??'').slice(0,100),lastName:(p.family_name??'').slice(0,100),avatar:p.picture?.startsWith('https://')?p.picture.slice(0,2048):null},req.cookies?.[sessionCookie],(conn,userId,sessionId)=>model.recordAudit({actorId:userId,actorEmail:email,sessionId,status:'success',userAgent:(req.get('user-agent')??'').slice(0,512),event:'auth.google.success',target:userId,...auditContext(req),actorType:'user',metadata:{}},conn));
     if (!session) throw new Error('Account not allowed');
     res.cookie(sessionCookie,session.token,{...cookieOptions,maxAge:10*60*1000});
     const params=new URLSearchParams({auth:'success',status:'mfa_required'});
     if (returnTo) params.set('returnTo',returnTo);
     res.redirect(`/login?${params}`);
   } catch {
-    await audit(req,'auth.google.failed').catch(()=>{});
+    await audit(req,'auth.google.failure',undefined,{failure_reason:'OAUTH_OR_ACCOUNT_REJECTED'}).catch(()=>{securityFailure(req,'AUDIT_ENQUEUE_FAILED');});
     const params=new URLSearchParams({auth:'error'});
     if (returnTo) params.set('returnTo',returnTo);
     res.redirect(`/login?${params}`);
@@ -61,18 +67,25 @@ export async function googleCallback(req: Request, res: Response) {
 export async function otpSend(req: Request,res: Response) {
   if (req.identity!.kind!=='pending' || req.identity!.totpEnabled) throw new HttpError(403,'ขั้นตอนนี้ไม่รองรับการส่ง Email OTP');
   const code=String(randomInt(0,1000000)).padStart(6,'0');
-  const id=await model.createOtp(req.identity!.sessionId,code,record(req));
+  let id: string|null;
+  try { id=await model.createOtp(req.identity!.sessionId,code,record(req)); }
+  catch(error) {
+    if (error instanceof model.OtpCooldownError) { res.setHeader('Retry-After',error.retryAfter); throw new HttpError(429,'กรุณารอครบ 60 วินาทีก่อนขอรหัสใหม่','OTP_COOLDOWN'); }
+    throw error;
+  }
   if (!id) throw new HttpError(401,'กรุณาเริ่มเข้าสู่ระบบใหม่');
-  try { await sendOtp(req.identity!.email,code); }
-  catch { await model.discardOtp(id); throw new HttpError(503,'ส่งอีเมลไม่สำเร็จ กรุณาตรวจสอบการตั้งค่า Gmail','MAIL_UNAVAILABLE'); }
-  await audit(req,'auth.otp.sent'); res.json({ok:true,expiresIn:config.otpMinutes*60});
+  const state=await model.otpState(req.identity!.sessionId);
+  res.setHeader('Retry-After',state.retryAfter);
+  try { await sendOtp(req.identity!.email,code,state.reference!,state.applicationName); }
+  catch { await model.discardOtp(id);await audit(req,'auth.otp.delivery.failure',undefined,{failure_reason:'MAIL_UNAVAILABLE'}); throw new HttpError(503,'ส่งอีเมลไม่สำเร็จ กรุณาตรวจสอบการตั้งค่า Gmail','MAIL_UNAVAILABLE'); }
+  await audit(req,'auth.otp.sent'); res.json({ok:true,expiresIn:config.otpMinutes*60,...state});
 }
 async function completeVerification(req: Request,res: Response,token: string | null,event: string) {
-  if (!token) { await audit(req,`${event}.failed`); throw new HttpError(401,'รหัสไม่ถูกต้อง หมดอายุ หรือถูกใช้แล้ว','INVALID_CODE'); }
+  if (!token) { if(!req.auditRecorded)await audit(req,`${event}.failed`); throw new HttpError(401,'รหัสไม่ถูกต้อง หมดอายุ หรือถูกใช้แล้ว','INVALID_CODE'); }
   res.cookie(sessionCookie,token,{...cookieOptions,maxAge:config.sessionHours*60*60*1000});
   res.json({ok:true});
 }
-export async function otpVerify(req: Request,res: Response) { await completeVerification(req,res,await model.verifyEmailOtp(req.identity!.sessionId,req.body.code,record(req)),'auth.email'); }
+export async function otpVerify(req: Request,res: Response) { await completeVerification(req,res,await model.verifyEmailOtp(req.identity!.sessionId,req.body.code,record(req),req.body.reference),'auth.email'); }
 export async function totpVerify(req: Request,res: Response) { const token=await model.verifyTotp(req.identity!.sessionId,req.body.code,'login',record(req)); await completeVerification(req,res,typeof token==='string'?token:null,'auth.totp'); }
 export async function recoveryVerify(req: Request,res: Response) { await completeVerification(req,res,await model.verifyRecovery(req.identity!.sessionId,req.body.code,record(req)),'auth.recovery'); }
 export async function totpSetup(req: Request,res: Response) {
@@ -107,5 +120,10 @@ export async function revokeSession(req: Request,res: Response) {
   const result=await model.deleteSession(id,req.identity!.userId,record(req));
   if (!result.affectedRows) throw new HttpError(404,'ไม่พบเซสชัน');
   if (id===req.identity!.sessionId) res.clearCookie(sessionCookie,cookieOptions);
+  res.json({ok:true});
+}
+
+export async function reauthenticate(req:Request,res:Response) {
+  if (!await model.verifyTotp(req.identity!.sessionId,req.body.code,'reauth',record(req))) throw new HttpError(400,'รหัสไม่ถูกต้องหรือถูกใช้แล้ว กรุณารอรหัสชุดถัดไป','INVALID_CODE');
   res.json({ok:true});
 }

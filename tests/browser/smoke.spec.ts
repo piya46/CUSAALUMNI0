@@ -2,7 +2,7 @@ import { test,expect } from '@playwright/test';
 
 test('login, demo navigation, allowlist mutation and reload isolation',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/login');
   await expect(page.getByRole('heading',{name:'เข้าสู่ระบบ'})).toBeVisible();
   await page.screenshot({path:'test-results/login-desktop.png',fullPage:true});
   await page.getByRole('button',{name:'เปิดโหมดตัวอย่าง'}).click();
@@ -24,7 +24,7 @@ test('login, demo navigation, allowlist mutation and reload isolation',async({pa
 });
 
 test('mobile layout, navigation drawer and security page',async({page})=>{
-  await page.setViewportSize({width:390,height:844});await page.goto('/');
+  await page.setViewportSize({width:390,height:844});await page.goto('/login');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
   await page.getByRole('button',{name:'เปิดโหมดตัวอย่าง'}).click();
   await page.screenshot({path:'test-results/dashboard-mobile.png',fullPage:true});
@@ -38,7 +38,7 @@ test('mobile layout, navigation drawer and security page',async({page})=>{
 
 test('demo application, one-time API key, revocation and MFA recovery setup',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/');await page.getByRole('button',{name:'เปิดโหมดตัวอย่าง'}).click();
+  await page.goto('/login');await page.getByRole('button',{name:'เปิดโหมดตัวอย่าง'}).click();
   const nav=page.getByRole('navigation',{name:'เมนูหลัก'});
   await nav.getByRole('button',{name:'แอปพลิเคชัน',exact:true}).click();
   await page.getByRole('button',{name:'เพิ่มแอปพลิเคชัน',exact:true}).click();
@@ -58,12 +58,12 @@ test('demo application, one-time API key, revocation and MFA recovery setup',asy
   await expect(row).toContainText('เพิกถอน');
   await nav.getByRole('button',{name:'ความปลอดภัย',exact:true}).click();
   await page.getByRole('button',{name:'ปิดใช้งาน',exact:true}).click();
-  dialog=page.getByRole('dialog');await dialog.locator('input[name="code"]').fill('123456');
+  dialog=page.getByRole('dialog');await dialog.locator('.otp-digits input').first().fill('123456');
   await dialog.getByRole('button',{name:'ยืนยันปิดใช้งาน'}).click();
   await page.getByRole('button',{name:'เปิดใช้งาน',exact:true}).click();
   dialog=page.getByRole('dialog');await expect(dialog.getByRole('img',{name:'QR code สำหรับตั้งค่า Authenticator'})).toBeVisible();
   await expect(dialog.locator('.recovery-codes code')).toHaveCount(8);
-  await dialog.getByRole('checkbox').check();await dialog.locator('input[name="code"]').fill('123456');
+  await dialog.getByRole('checkbox').check();await dialog.locator('.otp-digits input').first().fill('123456');
   await dialog.getByRole('button',{name:'ยืนยันและเปิดใช้งาน'}).click();
   await expect(page.getByRole('button',{name:'ปิดใช้งาน',exact:true})).toBeVisible();
   expect(errors).toEqual([]);
@@ -109,7 +109,7 @@ test('MFA resumes the original service and existing sessions show continuation w
   await page.goto(loginUrl);
   await expect(page.getByRole('heading', { name: 'ยืนยันว่าเป็นคุณ' })).toBeVisible();
   await expect(page.locator('.auth-application')).toContainText('People & HR');
-  await page.getByLabel('รหัสยืนยัน', { exact: true }).fill('123456');
+  await page.locator('.otp-digits input').first().fill('123456');
   await page.getByRole('button', { name: 'ยืนยันและเข้าสู่ระบบ' }).click();
   await expect(page.getByRole('heading', { name: 'Returned to authorization' })).toBeVisible();
   await page.goto(loginUrl);

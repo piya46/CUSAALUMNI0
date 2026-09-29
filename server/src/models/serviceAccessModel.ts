@@ -23,8 +23,10 @@ export async function saveRole(actor: Actor, applicationId: string, roleId: stri
     return await transaction(async conn => {
       await lockAdministrators(actor, conn); await activeApplication(applicationId, conn);
       const id = roleId || randomUUID();
+      let before:ServiceRole|null=null;
       if (roleId) {
         const [existing] = await query<ServiceRole>(`${roleSelect} WHERE id=? AND application_id=? AND revoked_at IS NULL FOR UPDATE`, [id, applicationId], conn);
+        before=existing??null;
         if (!existing) throw new HttpError(404, 'ไม่พบ Role', 'NOT_FOUND');
         if (existing.code !== input.code) throw new HttpError(409, 'เปลี่ยนรหัส Role ไม่ได้ กรุณาสร้าง Role ใหม่', 'IMMUTABLE_ROLE_CODE');
         await execute('UPDATE application_roles SET name=?, description=? WHERE id=?', [input.name, input.description, id], conn);
@@ -33,7 +35,7 @@ export async function saveRole(actor: Actor, applicationId: string, roleId: stri
         if (Number(total) >= 100) throw new HttpError(409, 'แต่ละ Service รองรับได้สูงสุด 100 Role', 'ROLE_LIMIT');
         await execute('INSERT INTO application_roles (id,application_id,code,name,description) VALUES (?,?,?,?,?)', [id, applicationId, input.code, input.name, input.description], conn);
       }
-      await audit(conn, roleId ? 'service.role.updated' : 'service.role.created', id, { applicationId, code: input.code });
+      await audit(conn, roleId ? 'service.role.updated' : 'service.role.created', id, { applicationId,before,after:input });
       return { id, applicationId, ...input };
     });
   } catch (error) {
@@ -81,21 +83,30 @@ export async function saveMember(actor: Actor, applicationId: string, userId: st
     if (!user) throw new HttpError(404, 'ไม่พบผู้ใช้ที่มีสิทธิ์เข้าสู่ระบบ', 'NOT_FOUND');
     const roles = await query<{ id: string }>(`SELECT id FROM application_roles WHERE application_id=? AND revoked_at IS NULL AND id IN (${input.roleIds.map(() => '?').join(',')}) FOR UPDATE`, [applicationId, ...input.roleIds], conn);
     if (!input.roleIds.length || roles.length !== input.roleIds.length) throw new HttpError(400, 'Role ต้องเป็นของ Service นี้และยังเปิดใช้งานอยู่', 'INVALID_SERVICE_ROLE');
+    const before=await membershipSnapshot(applicationId,userId,conn);
     await execute(`INSERT INTO application_memberships (application_id,user_id,department) VALUES (?,?,?)
       ON DUPLICATE KEY UPDATE department=VALUES(department),revoked_at=NULL,updated_at=UTC_TIMESTAMP(3)`, [applicationId, userId, input.department], conn);
     await execute('DELETE FROM application_member_roles WHERE application_id=? AND user_id=?', [applicationId, userId], conn);
     for (const roleId of input.roleIds) await execute('INSERT INTO application_member_roles (application_id,user_id,role_id) VALUES (?,?,?)', [applicationId, userId, roleId], conn);
     await revokeCredentials(applicationId, userId, conn);
-    await audit(conn, 'service.member.updated', userId, { applicationId, department: input.department, roleIds: input.roleIds });
+    await audit(conn, 'service.member.updated', userId, { applicationId,before,after:input });
   });
 }
 export async function revokeMember(actor: Actor, applicationId: string, userId: string, audit: AuditWriter) {
   await transaction(async conn => {
     await lockAdministrators(actor, conn); await activeApplication(applicationId, conn);
+    const before=await membershipSnapshot(applicationId,userId,conn);
     const result = await execute('UPDATE application_memberships SET revoked_at=UTC_TIMESTAMP(3),updated_at=UTC_TIMESTAMP(3) WHERE application_id=? AND user_id=? AND revoked_at IS NULL', [applicationId, userId], conn);
     if (!result.affectedRows) throw new HttpError(404, 'ไม่พบสมาชิก Service', 'NOT_FOUND');
     await execute('DELETE FROM application_member_roles WHERE application_id=? AND user_id=?', [applicationId, userId], conn);
     await revokeCredentials(applicationId, userId, conn);
-    await audit(conn, 'service.member.revoked', userId, { applicationId });
+    await audit(conn, 'service.member.revoked', userId, { applicationId,before,after:null });
   });
+}
+
+async function membershipSnapshot(applicationId:string,userId:string,conn:PoolConnection) {
+  const [member]=await query<{department:string;revoked_at:Date|null}>('SELECT department,revoked_at FROM application_memberships WHERE application_id=? AND user_id=? FOR UPDATE',[applicationId,userId],conn);
+  if(!member||member.revoked_at)return null;
+  const roles=await query<{role_id:string}>('SELECT role_id FROM application_member_roles WHERE application_id=? AND user_id=? ORDER BY role_id',[applicationId,userId],conn);
+  return {department:member.department,roleIds:roles.map(row=>row.role_id)};
 }

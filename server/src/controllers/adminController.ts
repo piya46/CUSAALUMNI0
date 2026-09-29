@@ -3,7 +3,7 @@ import * as model from '../models/adminModel.js';
 import { audit } from '../middleware/security.js';
 import { idSchema, paginationSchema, auditFilterSchema, allowlistSchema, applicationSchema, apiKeySchema } from './adminValidation.js';
 
-function actor(req: Request) { return { userId: req.identity!.userId, email: req.identity!.email }; }
+function actor(req: Request) { return { userId: req.identity!.userId, email: req.identity!.email,sessionId:req.identity!.sessionId }; }
 function auditWriter(req: Request): model.AuditWriter {
   return (connection, event, target, metadata) => audit(req, event, target, metadata, connection);
 }
@@ -13,7 +13,7 @@ export async function users(req: Request, res: Response) { res.json(await model.
 export async function allowlist(req: Request, res: Response) { res.json(await model.listAllowedEmails(paginationSchema.parse(req.query))); }
 export async function applications(req: Request, res: Response) { res.json(await model.listApplications(paginationSchema.parse(req.query))); }
 export async function apiKeys(req: Request, res: Response) { res.json(await model.listApiKeys(paginationSchema.parse(req.query))); }
-export async function auditLog(req: Request, res: Response) { res.json(await model.listAudit(auditFilterSchema.parse(req.query))); }
+export async function auditLog(req: Request, res: Response) { const filters=auditFilterSchema.parse(req.query);const result=await model.listAudit(filters);await audit(req,'audit.search',undefined,{event:filters.event,email:filters.email,returned:result.events.length,startAt:result.meta.startAt.toISOString(),endBefore:result.meta.endBefore.toISOString()});res.json(result); }
 
 export async function createAllowedEmail(req: Request, res: Response) {
   const email = await model.addAllowedEmail(actor(req), allowlistSchema.parse(req.body), auditWriter(req));

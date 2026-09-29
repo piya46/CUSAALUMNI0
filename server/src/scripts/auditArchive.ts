@@ -96,7 +96,9 @@ async function main() {
     console.log(JSON.stringify({ verified: true, ...manifest }, null, 2));
   } else {
     if (!values.out) throw new Error('Usage: --from YYYY-MM-DD --to YYYY-MM-DD --out file.jsonl, or --verify file.jsonl');
+    console.error(JSON.stringify({event:'audit.export.started',actorType:'system',from:values.from,to:values.to}));
     const manifest = await archiveAudit(date(values.from), date(values.to), values.out);
+    console.error(JSON.stringify({event:'audit.export.completed',actorType:'system',rows:manifest.rows,sha256:manifest.sha256}));
     console.log(JSON.stringify(manifest, null, 2));
   }
 }

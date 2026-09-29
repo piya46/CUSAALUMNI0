@@ -12,7 +12,9 @@
     "db:migrate": "tsx src/migrate.ts",
     "db:bootstrap": "tsx src/bootstrap.ts",
     "db:cleanup": "node --import tsx src/scripts/cleanup.ts",
-    "audit:archive": "node --import tsx src/scripts/auditArchive.ts"
+    "audit:archive": "node --import tsx src/scripts/auditArchive.ts",
+    "ops:check": "node dist/scripts/operationsCheck.js",
+    "evidence:purge": "node dist/scripts/purgeMfaEvidence.js"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",
@@ -22,14 +24,17 @@
     "express-rate-limit": "^8.7.0",
     "google-auth-library": "^10.3.0",
     "helmet": "^8.1.0",
+    "multer": "^2.4.0",
     "mysql2": "^3.14.3",
     "otpauth": "^9.4.1",
     "redis": "^6.2.1",
+    "sharp": "^0.35.5",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.9",
     "@types/express": "^5.0.3",
+    "@types/multer": "^2.3.0",
     "@types/node": "^22.18.0",
     "@types/supertest": "^6.0.3",
     "supertest": "^7.1.4",

@@ -1,0 +1,8 @@
+.mfa-reset-request { text-align:left; padding-top:24px; border-top:1px solid #e1e8dc; margin-top:20px; }
+.mfa-reset-request h2 { font-size:18px; }
+.mfa-reset-request p { color:#6a7d64; font-size:12px; line-height:1.9; margin:12px 0; }
+.evidence-notice { padding:16px; border-radius:8px; background:#f5f7ef; margin:18px 0; font-size:12px; line-height:1.9; color:#607258; }
+.evidence-notice a { text-decoration:underline; }
+.reset-status { background:#edf4e9; padding:14px; border-radius:8px; margin:16px 0; font-size:12px; color:#45643a; }
+.reset-status small { display:block; margin:8px 0; }
+.evidence-preview { width:100%; max-height:55vh; object-fit:contain; background:#e9ede6; border-radius:8px; }

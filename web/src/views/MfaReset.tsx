@@ -1,0 +1,43 @@
+import { useEffect,useState } from 'react';
+import { api,apiFile,apiUpload } from '../models/api';
+import { Modal,SectionHeading,date } from '../components/ui';
+import './mfa-reset.css';
+type ResetRequest={id:string;userId:string;status:string;reason:string;createdAt:string;deleteAfter:string;purgedAt:string|null;email?:string;name?:string;userRole?:string;firstApprovedBy?:string|null};
+const statusLabels:Record<string,string>={uploading:'กำลังรับหลักฐาน',pending:'รอพิจารณา',pending_second:'รอผู้ดูแลคนที่สอง',approved:'อนุมัติแล้ว',rejected:'ไม่อนุมัติ',expired:'คำขอหมดอายุ',cancelled:'คำขอถูกยกเลิก'};
+export function MfaResetRequest(){
+  const [item,setItem]=useState<ResetRequest|null>(null),[enabled,setEnabled]=useState(false),[loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function load(){try{const result=await api<{request:ResetRequest|null;enabled:boolean}>('/auth/mfa-reset');setItem(result.request);setEnabled(result.enabled);}catch(e){setError((e as Error).message);}finally{setLoaded(true);}}
+  useEffect(()=>{void load();},[]);
+  const waiting=item&&['uploading','pending','pending_second'].includes(item.status)&&new Date(item.deleteAfter)>new Date();
+  return <div className="mfa-reset-request"><h2>ขอเปลี่ยน Authenticator</h2><p>ใช้เมื่อเครื่องเดิมสูญหายหรือเปลี่ยนเครื่อง และไม่มี Recovery code หากมีรหัสกู้คืน ให้ใช้รหัสนั้นก่อนเพื่อกู้บัญชีได้ทันที</p>
+    {error&&<p className="inline-error" role="alert">{error}</p>}
+    {item&&<div className="reset-status" role="status"><strong>{statusLabels[item.status]??item.status}</strong><small>คำขอ {item.id.slice(0,8)} · {date(item.createdAt,true)}</small>{waiting&&<p>ผู้ดูแลจะตรวจหลักฐานก่อนอนุมัติ เมื่ออนุมัติ เซสชันเดิมจะสิ้นสุด ให้เข้าสู่ระบบ Google ใหม่และตั้งค่า Authenticator เครื่องใหม่</p>}<button type="button" className="text-link" onClick={()=>void load()}>ตรวจสถานะอีกครั้ง</button></div>}
+    {loaded&&!enabled&&<p>ยังไม่เปิดรับเอกสารออนไลน์ กรุณาติดต่อ support.scicualumni@gmail.com เพื่อสอบถามขั้นตอน โดยไม่ส่งเอกสารส่วนตัวทางอีเมลทันที</p>}
+    {enabled&&!waiting&&<form onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;setBusy(true);setError('');try{const data=new FormData(form);data.set('noticeVersion','2026-09-30');await apiUpload('/auth/mfa-reset',data);form.reset();await load();}catch(err){setError((err as Error).message);}finally{setBusy(false);}}}>
+      <label className="field">เหตุผล<select name="reason" required><option value="replaced">เปลี่ยนเครื่อง</option><option value="lost">เครื่องสูญหาย</option><option value="damaged">เครื่องเดิมใช้งานไม่ได้</option></select></label>
+      <div className="evidence-notice"><strong>เตรียมหลักฐานอย่างปลอดภัย</strong><p>แนบภาพถ่ายตัวคุณคู่เอกสารยืนยันตัวตน เช่น บัตรประชาชน โดยปิดเลขบัตร ที่อยู่ วันเกิด ศาสนา กรุ๊ปเลือด และข้อมูลอื่นที่ไม่จำเป็นก่อนถ่าย ให้เห็นเพียงชื่อและภาพเจ้าของเอกสาร ไม่ส่งภาพหลังบัตรหรือรหัส Laser ID</p><p>ใช้เพื่อพิจารณาคำขอเปลี่ยน MFA เท่านั้น ภาพจะถูกใส่ลายน้ำและเข้ารหัส ผู้ดูแลที่ได้รับสิทธิ์เท่านั้นเปิดตรวจได้ ลบภายใน 7 วันหลังอนุมัติหรือปฏิเสธ คำขอที่ค้างไม่เกิน 30 วัน เก็บประวัติการตัดสินใจโดยไม่มีภาพต่อเพื่อความปลอดภัย</p><a href="/privacy" target="_blank" rel="noopener noreferrer">อ่านนโยบายการใช้หลักฐาน</a></div>
+      <label className="field">ภาพหลักฐาน JPEG / PNG · ไม่เกิน 5 MB<input name="evidence" type="file" accept="image/jpeg,image/png" required disabled={busy}/></label>
+      <label className="checkbox-row"><input name="acknowledged" type="checkbox" value="true" required/><span>รับทราบวัตถุประสงค์ ระยะเก็บ และปิดข้อมูลที่ไม่จำเป็นในภาพแล้ว</span></label>
+      <button className="button primary full-width" disabled={busy}>{busy?'กำลังเข้ารหัสและส่งหลักฐาน…':'ส่งคำขอให้ผู้ดูแลพิจารณา'}</button>
+    </form>}
+  </div>;
+}
+export function MfaResetAdmin(){
+  const [items,setItems]=useState<ResetRequest[]>([]),[filter,setFilter]=useState('pending'),[cursor,setCursor]=useState<string|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[image,setImage]=useState<string|null>(null),[selected,setSelected]=useState<ResetRequest|null>(null),[verified,setVerified]=useState(false),[reason,setReason]=useState('unreadable');
+  async function load(after?:string){try{const data=await api<{requests:ResetRequest[];meta:{nextCursor:string|null}}>(`/admin/mfa-resets?status=${filter}${after?`&cursor=${encodeURIComponent(after)}`:''}`);setItems(previous=>after?[...previous,...data.requests]:data.requests);setCursor(data.meta.nextCursor);}catch(e){setError((e as Error).message);}}
+  useEffect(()=>{void load();},[filter]);
+  useEffect(()=>()=>{if(image)URL.revokeObjectURL(image);},[image]);
+  async function open(item:ResetRequest){setBusy(true);setError('');try{const blob=await apiFile(`/admin/mfa-resets/${item.id}/evidence`);setImage(URL.createObjectURL(blob));setSelected(item);setVerified(false);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  async function decide(decision:'approve'|'reject'){if(!selected)return;setBusy(true);setError('');try{await api(`/admin/mfa-resets/${selected.id}/decision`,'POST',decision==='approve'?{decision,verified,reason:'identity_verified'}:{decision,reason});setSelected(null);setImage(null);await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  return <><SectionHeading eyebrow="ACCOUNT RECOVERY" title="คำขอเปลี่ยน MFA" description="ตรวจหลักฐานและยืนยันตัวตนกับเจ้าของบัญชีก่อนถอนการผูกเครื่องเดิม"><button className="button secondary" onClick={()=>void load()}>รีเฟรช</button></SectionHeading>
+    <div className="info-strip amber">ห้ามอนุมัติคำขอของตัวเอง บัญชี Admin ต้องได้รับอนุมัติจากผู้ดูแล 2 คนที่ไม่ใช่เจ้าของบัญชี หลังอนุมัติ เซสชันและ Recovery codes เดิมทั้งหมดจะถูกยกเลิก</div>
+    {error&&<p role="alert" className="inline-error">{error}</p>}
+    <label className="field">สถานะ<select value={filter} onChange={e=>setFilter(e.target.value)}>{['pending','pending_second','approved','rejected','expired','cancelled','all'].map(value=><option key={value} value={value}>{statusLabels[value]??'ทั้งหมด'}</option>)}</select></label>
+    <div className="panel table-scroll"><table><thead><tr><th>ผู้ขอ / คำขอ</th><th>สถานะ</th><th>กำหนดลบหลักฐาน</th><th/></tr></thead><tbody>{items.map(item=><tr key={item.id}><td><strong>{item.name??'บัญชีถูกลบ'}</strong><small className="cell-subtitle">{item.email??item.userId}<br/>{item.id.slice(0,8)}</small></td><td>{statusLabels[item.status]??item.status}</td><td>{item.purgedAt?`ลบแล้ว ${date(item.purgedAt,true)}`:date(item.deleteAfter,true)}</td><td><button className="button secondary" disabled={busy||!!item.purgedAt||new Date(item.deleteAfter)<=new Date()||item.status==='cancelled'} onClick={()=>void open(item)}>เปิดตรวจหลักฐาน</button></td></tr>)}</tbody></table>{!items.length&&<p className="empty-state">ไม่มีคำขอในสถานะนี้</p>}</div><p className="field-hint">โหลดครั้งละ 50 คำขอ หลักฐานที่หมดอายุหรือถูกทำลายแล้วเปิดดูไม่ได้</p>{cursor&&<button className="button secondary" onClick={()=>void load(cursor)}>โหลดคำขอถัดไป</button>}
+    {selected&&image&&<Modal title="ตรวจคำขอเปลี่ยน MFA" description={`${selected.email??selected.userId} · ${selected.id.slice(0,8)}`} close={()=>{setSelected(null);setImage(null);}} busy={busy}>
+      {error&&<p role="alert" className="inline-error">{error}</p>}<img className="evidence-preview" src={image} alt="หลักฐานยืนยันตัวตนที่มีลายน้ำ จำกัดใช้เพื่อพิจารณา MFA"/>
+      {['pending','pending_second'].includes(selected.status)&&<><label className="checkbox-row"><input type="checkbox" checked={verified} onChange={e=>setVerified(e.target.checked)}/><span>ตรวจหลักฐานและยืนยันกับเจ้าของบัญชีผ่านช่องทางที่มีอยู่เดิมแล้ว ข้อมูลตรงกัน และคำขอมีเหตุสมควร</span></label><button className="button primary full-width" disabled={busy||!verified} onClick={()=>void decide('approve')}>{selected.userRole==='admin'&&!selected.firstApprovedBy?'อนุมัติขั้นแรก รอผู้ดูแลคนที่สอง':'อนุมัติและยกเลิก MFA เดิม'}</button><label className="field">เหตุผลหากไม่อนุมัติ<select value={reason} onChange={e=>setReason(e.target.value)}><option value="unreadable">ภาพอ่านไม่ชัดเจน</option><option value="identity_mismatch">ข้อมูลไม่ตรงกับเจ้าของบัญชี</option><option value="insufficient_evidence">หลักฐานไม่เพียงพอ</option><option value="withdrawn">เจ้าของบัญชียกเลิกคำขอ</option></select></label><button className="button danger full-width" disabled={busy} onClick={()=>void decide('reject')}>ไม่อนุมัติคำขอ</button></>}
+      <p className="field-hint">ห้ามคัดลอกหรือส่งต่อหลักฐาน การเปิดดูและการตัดสินใจถูกบันทึกใน Audit</p>
+    </Modal>}
+  </>;
+}

@@ -25,7 +25,8 @@ test('HTTP auth enforces CSRF, MFA, validation, rotation and role boundaries',{s
   await request(app).post('/api/auth/otp/verify').set('Cookie',s.cookie).set('Origin','https://evil.example').set('X-CSRF-Token',s.identity.csrfToken).send({code:'654321'}).expect(403);
   await request(app).post('/api/auth/otp/verify').set('Cookie',s.cookie).set('Origin',config.appOrigin).set('X-CSRF-Token',s.identity.csrfToken).send({code:'invalid'}).expect(400);
   await model.createOtp(s.sessionId,'654321');
-  const verified=await request(app).post('/api/auth/otp/verify').set('Cookie',s.cookie).set('Origin',config.appOrigin).set('X-CSRF-Token',s.identity.csrfToken).send({code:'654321'}).expect(200);
+  const {reference}=await model.otpState(s.sessionId);
+  const verified=await request(app).post('/api/auth/otp/verify').set('Cookie',s.cookie).set('Origin',config.appOrigin).set('X-CSRF-Token',s.identity.csrfToken).send({code:'654321',reference}).expect(200);
   const cookies=verified.headers['set-cookie'] as unknown as string[];const credential=cookies[0];
   assert.match(credential,/HttpOnly/);assert.match(credential,/SameSite=Lax/);assert.ok(!credential.includes(s.token));
   await request(app).get('/api/auth/me').set('Cookie',s.cookie).expect(401);

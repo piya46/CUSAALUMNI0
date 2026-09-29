@@ -31,6 +31,11 @@ function fakeDatabase() {
     },
     async query<T>(sql: string, params: any[] = [], tx?: PoolConnection): Promise<T[]> {
       state.statements.push(sql);
+      if(sql.includes('SELECT identity.*')) {
+        assert.equal(tx,undefined);assert.doesNotMatch(sql,/FOR UPDATE/);
+        return (state.keyLive?[{keyScopes:JSON.stringify(state.scopes),keyExpiresAt:state.keyExpiresAt,
+          ...(state.live&&state.applicationId===applicationId?{given_name:'Test',family_name:'User',department:'IT',roles:'["viewer"]',sub:'user-1',email:'user@example.com',name:'User',aud:applicationId,exp:state.tokenExpiresAt,scope:'identity:read',redirectUri}:{sub:null})}]:[]) as T[];
+      }
       if (sql.includes('FROM api_keys k')) {
         assert.equal(tx, connection);
         assert.match(sql, /FOR UPDATE/);
@@ -192,4 +197,9 @@ test('five-second cache reloads at an earlier key or session/token effective exp
     else assert.deepEqual(await cache.get('key', 'token', load), { active: false });
     assert.equal(calls, 2);
   }
+});
+
+test('introspection uses a single read with no transaction locks or writes',async()=>{
+  const {model,state}=fakeDatabase();await model.introspectToken('key','token');
+  assert.equal(state.statements.length,1);assert.doesNotMatch(state.statements[0],/FOR UPDATE|last_used_at/);
 });

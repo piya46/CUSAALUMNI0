@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { permitsUnencryptedDatabase } from './services/databaseTransport.js';
 
@@ -15,6 +17,8 @@ const schema = z.object({
   DB_CONNECTION_LIMIT:z.coerce.number().int().min(1).max(100).default(20),
   DB_QUEUE_LIMIT:z.coerce.number().int().min(1).max(1000).default(100),
   INTROSPECTION_CACHE_SECONDS:z.coerce.number().int().min(0).max(5).default(5),
+  MFA_EVIDENCE_KEY:z.string().default(''),
+  MFA_EVIDENCE_DIR:z.string().default(fileURLToPath(new URL('../../var/mfa-evidence',import.meta.url))),
   SESSION_SECRET: z.string().default(''), ENCRYPTION_KEY: z.string().default(''),
   GOOGLE_CLIENT_ID: z.string().default(''), GOOGLE_CLIENT_SECRET: z.string().default(''),
   MAIL_MODE: z.enum(['gmail_oauth', 'workspace_service_account', 'disabled']).default('disabled'),
@@ -23,7 +27,10 @@ const schema = z.object({
   GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().default(''), GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z.string().default(''),
   SESSION_HOURS: z.coerce.number().int().min(1).max(24).default(8),
   OTP_MINUTES: z.coerce.number().int().min(1).max(10).default(5),
-  TRUST_PROXY: z.enum(['false', 'loopback', '1']).default('false'),
+  TRUST_PROXY: z.string().default('false').refine(value => ['false','loopback','1'].includes(value) || value.split(',').every(part=>{
+    const [ip,bits,...extra]=part.trim().split('/'); const family=isIP(ip);
+    return !extra.length && family>0 && (bits===undefined || (/^\d{1,3}$/.test(bits) && Number(bits)>0 && Number(bits)<=(family===4?32:128)));
+  })),
   REDIS_URL: z.string().default(''),
   INSTALL_ENABLED: z.enum(['true', 'false']).default('false'),
   INSTALL_TOKEN: z.string().default(''),
@@ -45,6 +52,7 @@ export function assertServerConfiguration() {
   if (env.DB_TLS !== 'true' && !permitsUnencryptedDatabase(env.DB_HOST)) throw new Error('Production DB_TLS=false requires localhost, a loopback IP, or a private IP on a trusted internal network; use verified TLS for public database endpoints');
 }
 export const config = {
+  mfaEvidenceKey:env.MFA_EVIDENCE_KEY,mfaEvidenceDir:resolve(fileURLToPath(new URL('../../',import.meta.url)),env.MFA_EVIDENCE_DIR),
   nodeEnv: env.NODE_ENV, port: env.PORT, appOrigin: env.APP_ORIGIN,
   dbHost: env.DB_HOST, dbPort: env.DB_PORT, dbName: env.DB_NAME, dbUser: env.DB_USER, dbPassword: env.DB_PASSWORD, dbTls: env.DB_TLS === 'true', dbCaFile: env.DB_CA_FILE,
   sessionSecret: env.SESSION_SECRET, encryptionKey: env.ENCRYPTION_KEY,
@@ -53,7 +61,7 @@ export const config = {
   gmailClientId: env.GMAIL_CLIENT_ID || env.GOOGLE_CLIENT_ID, gmailClientSecret: env.GMAIL_CLIENT_SECRET || env.GOOGLE_CLIENT_SECRET,
   googleServiceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL, googleServiceAccountPrivateKey: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n'),
   sessionHours: env.SESSION_HOURS, otpMinutes: env.OTP_MINUTES, configured, googleConfigured, mailConfigured,
-  trustProxy: env.TRUST_PROXY === '1' ? 1 : env.TRUST_PROXY === 'loopback' ? 'loopback' : false,
+  trustProxy: env.TRUST_PROXY === '1' ? 1 : env.TRUST_PROXY === 'false' ? false : env.TRUST_PROXY.split(',').map(s=>s.trim()),
   secureCookies: origin.protocol === 'https:',
   redisUrl: env.REDIS_URL,
   installEnabled: env.INSTALL_ENABLED === 'true', installToken: env.INSTALL_TOKEN, bootstrapAdminEmail: env.BOOTSTRAP_ADMIN_EMAIL,

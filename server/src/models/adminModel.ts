@@ -5,10 +5,10 @@ import { HttpError } from '../middleware/security.js';
 import { hashToken, randomToken } from '../services/crypto.js';
 
 type Role = 'admin' | 'user';
-export type Actor = { userId: string; email: string };
+export type Actor = { userId: string; email: string; sessionId?:string };
 export type AuditWriter = (connection: PoolConnection, event: string, target?: string, metadata?: Record<string, unknown>) => Promise<void>;
 export type Pagination = { page: number; limit: number; search: string };
-type AuditFilters = Pagination & { event?: string; email?: string; status?: 'success' | 'failure'; startAt?: Date; endBefore?: Date };
+type AuditFilters = Pagination & {cursor?:string; event?: string; email?: string; status?: 'success' | 'failure'; startAt?: Date; endBefore?: Date };
 type AllowedEmail = { id: string; email: string; role: Role; createdAt: Date };
 type Application = { id: string; name: string; description: string; redirectUri: string; createdAt: Date; revokedAt: Date | null };
 type ApiKey = { id: string; applicationId: string; name: string; prefix: string; scopes: string[]; createdAt: Date; expiresAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
@@ -45,6 +45,13 @@ export async function lockAdministrators(actor: Actor, connection: PoolConnectio
   const admins = await query<AllowedEmail>(`${allowlistSelect} WHERE role = 'admin' ORDER BY id FOR UPDATE`, [], connection);
   if (!admins.some(admin => admin.email.toLowerCase() === actor.email.toLowerCase())) {
     throw new HttpError(403, 'Administrator access is no longer available.', 'ADMIN_REVOKED');
+  }
+  if(actor.sessionId) {
+    const [session]=await query<{id:string}>(`SELECT s.id FROM sessions s JOIN users u ON u.id=s.user_id
+      WHERE s.id=? AND s.user_id=? AND s.kind='full' AND s.mfa_method='totp'
+      AND s.expires_at>UTC_TIMESTAMP(3) AND s.authenticated_at>=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 5 MINUTE)
+      AND u.deleted_at IS NULL AND u.totp_secret IS NOT NULL FOR UPDATE`,[actor.sessionId,actor.userId],connection);
+    if(!session)throw new HttpError(403,'กรุณายืนยัน Authenticator อีกครั้ง','MFA_REAUTH_REQUIRED');
   }
   return admins;
 }
@@ -87,10 +94,10 @@ export async function listAllowedEmails(options: Pagination) {
 export async function updateUserProfile(actor: Actor, id: string, data: { firstName: string; lastName: string }, audit: AuditWriter) {
   await transaction(async connection => {
     await lockAdministrators(actor, connection);
-    const [user] = await query<{ id: string }>('SELECT id FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE', [id], connection);
+    const [user] = await query<{ id: string }>('SELECT id,first_name AS firstName,last_name AS lastName FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE', [id], connection);
     if (!user) throw new HttpError(404, 'ไม่พบผู้ใช้', 'NOT_FOUND');
     await execute('UPDATE users SET first_name=?,last_name=? WHERE id=?', [data.firstName, data.lastName, id], connection);
-    await audit(connection, 'user.profile.updated', id, { fields: ['firstName', 'lastName'] });
+    await audit(connection, 'user.profile.updated', id, { before:user,after:data });
   });
 }
 
@@ -109,18 +116,26 @@ export async function listApiKeys(options: Pagination) {
 }
 
 export async function listAudit(options: AuditFilters) {
-  const conditions = ["(event LIKE ? ESCAPE '!' OR actor_email LIKE ? ESCAPE '!' OR target LIKE ? ESCAPE '!' OR ip LIKE ? ESCAPE '!')"];
-  const params: unknown[] = Array(4).fill(searchPattern(options.search));
-  for (const [column, operator, value] of [
-    ['event', '=', options.event], ['actor_email', '=', options.email], ['status', '=', options.status],
-    ['created_at', '>=', options.startAt], ['created_at', '<', options.endBefore],
-  ] as const) {
-    if (value !== undefined) { conditions.push(`${column} ${operator} ?`); params.push(value); }
+  let cursor:{createdAt:string;id:string;startAt:string;endBefore:string}|undefined;
+  if(options.cursor) {
+    try {const value=JSON.parse(Buffer.from(options.cursor,'base64url').toString('utf8'));
+      if(!/^[0-9a-f-]{36}$/i.test(value.id)||![value.createdAt,value.startAt,value.endBefore].every(v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(v)&&Number.isFinite(Date.parse(v)))) throw new Error();
+      cursor=value;
+    }catch{throw new HttpError(400,'Invalid audit cursor','VALIDATION_ERROR');}
   }
-  const result = await paginated<{ id: string; actorEmail: string | null; event: string; status: 'success' | 'failure'; target: string | null; ip: string | null; sessionId: string | null; userAgent: string | null; metadata: Record<string, unknown> | string | null; createdAt: Date }>(
-    'id, actor_email AS actorEmail, event, status, target, ip, session_id AS sessionId, user_agent AS userAgent, metadata, created_at AS createdAt',
-    'audit_logs', conditions.join(' AND '), params, 'created_at DESC, id', options);
-  return { events: result.rows.map(row => ({ ...row, metadata: row.metadata === null ? null : parseJson<Record<string, unknown>>(row.metadata) })), meta: result.meta };
+  const endBefore=options.endBefore??(cursor?new Date(cursor.endBefore):new Date());
+  const startAt=options.startAt??(cursor?new Date(cursor.startAt):new Date(endBefore.getTime()-7*86400000));
+  if(startAt>=endBefore||endBefore.getTime()-startAt.getTime()>31*86400000) throw new HttpError(400,'ค้นหา Audit ครั้งละไม่เกิน 31 วัน','VALIDATION_ERROR');
+  const conditions=['created_at>=?','created_at<?']; const params:unknown[]=[startAt,endBefore];
+  if(options.search){conditions.push("(event LIKE ? ESCAPE '!' OR actor_email LIKE ? ESCAPE '!' OR target LIKE ? ESCAPE '!' OR ip LIKE ? ESCAPE '!')");params.push(...Array(4).fill(searchPattern(options.search)));}
+  for(const [column,value] of [['event',options.event],['actor_email',options.email],['status',options.status]] as const){if(value!==undefined){conditions.push(`${column}=?`);params.push(value);}}
+  if(cursor){conditions.push('(created_at<? OR (created_at=? AND id<?))');params.push(new Date(cursor.createdAt),new Date(cursor.createdAt),cursor.id);}
+  const rows=await query<{id:string;createdAt:Date;metadata:Record<string,unknown>|string|null}>(`SELECT id,actor_email AS actorEmail,event,status,target,ip,session_id AS sessionId,user_agent AS userAgent,
+    request_id AS requestId,peer_ip AS peerIp,ip_source AS ipSource,actor_type AS actorType,application_id AS applicationId,api_key_id AS apiKeyId,
+    metadata,created_at AS createdAt FROM audit_logs WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC,id DESC LIMIT ?`,[...params,options.limit+1]);
+  const hasMore=rows.length>options.limit; const events=rows.slice(0,options.limit);const last=events.at(-1);
+  const nextCursor=hasMore&&last?Buffer.from(JSON.stringify({createdAt:last.createdAt.toISOString(),id:last.id,startAt:startAt.toISOString(),endBefore:endBefore.toISOString()})).toString('base64url'):null;
+  return {events:events.map(row=>({...row,metadata:row.metadata===null?null:parseJson<Record<string,unknown>>(row.metadata)})),meta:{limit:options.limit,hasMore,nextCursor,startAt,endBefore}};
 }
 
 export async function getOverview() {
@@ -235,7 +250,7 @@ export async function revokeApiKey(actor: Actor, id: string, audit: AuditWriter)
   });
 }
 
-export async function bootstrapAdmin(email: string, connection?: PoolConnection, source: 'cli' | 'web_install' = 'cli'): Promise<{ created: boolean }> {
+export async function bootstrapAdmin(email: string, connection?: PoolConnection, source: 'cli' | 'web_install' = 'cli',context?:{requestId?:string;ip?:string;peerIp?:string;ipSource?:string;userAgent?:string}): Promise<{ created: boolean }> {
   const create = async (connection: PoolConnection) => {
     const admins = await query<AllowedEmail>(`${allowlistSelect} WHERE role = 'admin' ORDER BY id FOR UPDATE`, [], connection);
     const [existing] = await query<AllowedEmail>(`${allowlistSelect} WHERE email = ? FOR UPDATE`, [email], connection);
@@ -246,7 +261,7 @@ export async function bootstrapAdmin(email: string, connection?: PoolConnection,
     if (existingUser) throw new Error('This email has an existing user record. Bootstrap never silently elevates an existing user.');
     const id = randomUUID();
     await execute("INSERT INTO allowed_emails (id, email, role) VALUES (?, ?, 'admin')", [id, email], connection);
-    await execute("INSERT INTO audit_logs (id, event, target, metadata) VALUES (?, 'admin.bootstrapped', ?, ?)", [randomUUID(), email, JSON.stringify({ source })], connection);
+    await execute("INSERT INTO audit_logs (id, event, target, metadata,actor_type,request_id,ip,peer_ip,ip_source,user_agent) VALUES (?, 'admin.bootstrapped', ?, ?, ?, ?, ?, ?, ?, ?)", [randomUUID(), email, JSON.stringify({ source }),source==='cli'?'system':'installer',context?.requestId??null,context?.ip??null,context?.peerIp??null,context?.ipSource??null,context?.userAgent??null], connection);
     return { created: true };
   };
   return connection ? create(connection) : transaction(create);

@@ -165,20 +165,20 @@ export function createSsoModel(db: SsoDatabase = { query, execute, transaction }
     },
 
     async introspectToken(apiKeyHash: string, tokenHash: string): Promise<Introspection> {
-      return db.transaction(async (connection) => {
-        const key = await lockApiKey(apiKeyHash, 'token:introspect', connection);
-        const [token] = await db.query<TokenRow>(
-          `${liveTokenSelect} AND t.application_id = ? FOR UPDATE`, [tokenHash, key.applicationId], connection);
-        await db.execute('UPDATE api_keys SET last_used_at = UTC_TIMESTAMP(3) WHERE id = ?', [key.id], connection);
-        if (!token || !token.scope.split(' ').includes('identity:read')) return { active: false };
-        // Expose the effective expiry so neither local nor caller caches outlive
-        // any credential required to authorize this introspection result.
-        const expiresAt = Math.min(Number(token.exp), key.expiresAt === null ? Infinity : Number(key.expiresAt));
-        return { active: true, sub: token.sub, email: token.email, name: token.name,
-          given_name: token.given_name, family_name: token.family_name, department: token.department,
-          roles: typeof token.roles === 'string' ? JSON.parse(token.roles) as string[] : token.roles,
-          aud: token.aud, scope: token.scope, exp: Math.floor(expiresAt) };
-      });
+      // One consistent statement; no row locks or last_used_at writes on this hot path.
+      const [row] = await db.query<TokenRow & {keyScopes:string|string[];keyExpiresAt:number|null}>(`
+        SELECT identity.*, k.scopes AS keyScopes, UNIX_TIMESTAMP(k.expires_at) AS keyExpiresAt
+        FROM api_keys k JOIN applications app ON app.id=k.application_id
+        LEFT JOIN (${liveTokenSelect}) identity ON identity.aud=k.application_id
+        WHERE k.key_hash=? AND k.revoked_at IS NULL AND app.revoked_at IS NULL
+        AND (k.expires_at IS NULL OR k.expires_at>UTC_TIMESTAMP(3))`,[tokenHash,apiKeyHash]);
+      if(!row) throw new SsoModelError('invalid_client');
+      if(!hasScope(row.keyScopes,'token:introspect')) throw new SsoModelError('insufficient_scope');
+      if(!row.sub || !row.scope.split(' ').includes('identity:read')) return {active:false};
+      return {active:true,sub:row.sub,email:row.email,name:row.name,
+        given_name:row.given_name,family_name:row.family_name,department:row.department,
+        roles:typeof row.roles==='string'?JSON.parse(row.roles) as string[]:row.roles,
+        aud:row.aud,scope:row.scope,exp:Math.floor(Math.min(Number(row.exp),row.keyExpiresAt===null?Infinity:Number(row.keyExpiresAt)))};
     },
 
     async getUserInfo(tokenHash: string): Promise<(Omit<TokenIdentity, 'exp' | 'scope'> & { email_verified: true; applicationOrigin: string }) | null> {

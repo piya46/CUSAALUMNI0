@@ -3,6 +3,7 @@ import type { PoolConnection } from 'mysql2/promise';
 import { config } from '../config.js';
 import { hashToken, safeEqual } from '../services/crypto.js';
 import { findSession, recordAudit, isMfaLocked } from '../models/authModel.js';
+import { auditContext, rateIp } from './requestContext.js';
 import { sharedRateLimit } from '../services/rateLimitStore.js';
 
 export class HttpError extends Error { constructor(public status: number, message: string, public code?: string) { super(message); } }
@@ -26,7 +27,20 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   if (req.identity.kind !== 'full') throw new HttpError(403, 'กรุณายืนยันรหัส OTP หรือ Authenticator', 'MFA_REQUIRED'); next();
 }
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
-  if (req.identity?.kind !== 'full' || req.identity.role !== 'admin') throw new HttpError(403, 'เฉพาะผู้ดูแลระบบ', 'FORBIDDEN'); next();
+  if (req.identity?.kind !== 'full' || req.identity.role !== 'admin') throw new HttpError(403, 'เฉพาะผู้ดูแลระบบ', 'FORBIDDEN');
+  if (!req.identity.totpEnabled || req.identity.mfaMethod!=='totp') throw new HttpError(403,'ผู้ดูแลต้องตั้งค่าและยืนยันด้วย Authenticator ก่อนใช้งาน','ADMIN_MFA_REQUIRED');
+  next();
+}
+export function requireRecentAdminMfa(req:Request,res:Response,next:NextFunction) {
+  if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
+  return requireFreshMfa(req,res,next);
+}
+export function requireFreshMfa(req:Request,_res:Response,next:NextFunction) {
+  const at=req.identity?.authenticatedAt?new Date(req.identity.authenticatedAt).getTime():NaN;
+  if (!Number.isFinite(at)||at>Date.now()+10_000||Date.now()-at>300_000) {
+    throw new HttpError(403,'กรุณายืนยัน Authenticator อีกครั้งก่อนเปลี่ยนสิทธิ์','MFA_REAUTH_REQUIRED');
+  }
+  next();
 }
 export async function requireUnlocked(req:Request,_res:Response,next:NextFunction) {
   if (req.identity && await isMfaLocked(req.identity.userId)) throw new HttpError(429,'บัญชีถูกพักการยืนยันชั่วคราว กรุณารอ 15 นาที','ACCOUNT_LOCKED'); next();
@@ -41,7 +55,7 @@ export function csrfProtection(req: Request, _res: Response, next: NextFunction)
 export function rateLimit(bucket: string, limit: number, seconds: number) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!config.configured) return next();
-    const keys = [`${bucket}:ip:${req.ip ?? 'unknown'}`];
+    const keys = [`${bucket}:ip:${rateIp(req)}`];
     if (req.identity) keys.push(`${bucket}:user:${req.identity.userId}`);
     for (const key of keys) {
       let allowed: boolean;
@@ -57,5 +71,6 @@ export function rateLimit(bucket: string, limit: number, seconds: number) {
 export async function audit(req: Request, event: string, target?: string, metadata?: unknown, connection?: PoolConnection) {
   event=event.replace(/\.failed$/,'.failure');
   const status=event.endsWith('.failure')?'failure':'success';
-  await recordAudit({actorId:req.identity?.userId ?? null,actorEmail:req.identity?.email ?? null,sessionId:req.identity?.sessionId ?? null,userAgent:(req.get('user-agent') ?? '').slice(0,512),status,event,target:target ?? null,ip:req.ip ?? 'unknown',metadata},connection);
+  await recordAudit({actorId:req.identity?.userId ?? null,actorEmail:req.identity?.email ?? null,sessionId:req.identity?.sessionId ?? null,userAgent:(req.get('user-agent') ?? '').slice(0,512),status,event,target:target ?? null,...auditContext(req),metadata},connection);
+  req.auditRecorded=true;
 }

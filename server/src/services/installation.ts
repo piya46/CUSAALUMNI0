@@ -28,14 +28,14 @@ export const installationService = {
     try { return await verifyEnvironment(connection); }
     finally { connection.release(); }
   },
-  async run() {
+  async run(context?:{requestId?:string;ip?:string;peerIp?:string;ipSource?:string;userAgent?:string}) {
     return withMigrationLock(async connection => {
       const details = await verifyEnvironment(connection);
       // DDL is restartable, not transactional. The admin, audit event, and final lock ARE atomic.
       const migrations = await applyMigrations(connection);
       await connection.beginTransaction();
       try {
-        await bootstrapAdmin(config.bootstrapAdminEmail, connection, 'web_install');
+        await bootstrapAdmin(config.bootstrapAdminEmail, connection, 'web_install',context);
         await completeInstallation(connection);
         await connection.commit();
       } catch (error) { await connection.rollback(); throw error; }

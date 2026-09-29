@@ -30,7 +30,7 @@ test('five failed MFA attempts lock account across newly created Google sessions
   for(let i=0;i<5;i++)assert.equal(await model.verifyEmailOtp(s.sessionId,'000000'),null);
   assert.equal(await model.isMfaLocked(s.userId),true); assert.equal(await model.verifyEmailOtp(s.sessionId,'654321'),null);
   const [r]=await query<any>('SELECT mfa_failed_attempts,mfa_locked_until FROM users WHERE id=?',[s.userId]); assert.equal(r.mfa_failed_attempts,5);
-  await execute('UPDATE users SET mfa_locked_until=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 SECOND) WHERE id=?',[s.userId]);
+  await execute('UPDATE users SET mfa_locked_until=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 SECOND),otp_sent_at=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 61 SECOND) WHERE id=?',[s.userId]);
   await model.createOtp(s.sessionId,'112233');
   assert.ok(await model.verifyEmailOtp(s.sessionId,'112233')); assert.equal(await model.isMfaLocked(s.userId),false);
 });

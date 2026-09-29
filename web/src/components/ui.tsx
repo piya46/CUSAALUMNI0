@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { ArrowUpRight, Check, CheckCircle2, Copy, LoaderCircle, ShieldCheck, X } from 'lucide-react';
 
 export function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={`brand ${compact ? 'compact' : ''}`}><span className="brand-mark"><ShieldCheck size={25} strokeWidth={1.8} /></span><strong>CUSA SSO</strong></div>;
+  return <div className={`brand ${compact ? 'compact' : ''}`}><span className="brand-mark"><img src="/cusa-sso.svg" width="36" height="36" alt="" /></span><strong>CUSA SSO</strong></div>;
 }
 export function Badge({ children, tone = 'green' }: { children: ReactNode; tone?: 'green' | 'gray' | 'amber' | 'blue' | 'red' }) {
   return <span className={`badge ${tone}`}><i />{children}</span>;
@@ -23,6 +23,8 @@ export function Modal({ title, description, children, close, busy = false }: { t
     const previous = document.activeElement as HTMLElement;
     ref.current?.focus();
     const handleKey = (event: KeyboardEvent) => {
+      const dialogs=document.querySelectorAll('[role="dialog"]');
+      if(dialogs[dialogs.length-1]!==ref.current)return;
       if (event.key === 'Escape' && !busy) close();
       if (event.key !== 'Tab') return;
       const focusable = ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]');
