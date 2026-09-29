@@ -235,8 +235,8 @@ export async function revokeApiKey(actor: Actor, id: string, audit: AuditWriter)
   });
 }
 
-export async function bootstrapAdmin(email: string): Promise<{ created: boolean }> {
-  return transaction(async connection => {
+export async function bootstrapAdmin(email: string, connection?: PoolConnection, source: 'cli' | 'web_install' = 'cli'): Promise<{ created: boolean }> {
+  const create = async (connection: PoolConnection) => {
     const admins = await query<AllowedEmail>(`${allowlistSelect} WHERE role = 'admin' ORDER BY id FOR UPDATE`, [], connection);
     const [existing] = await query<AllowedEmail>(`${allowlistSelect} WHERE email = ? FOR UPDATE`, [email], connection);
     if (existing?.role === 'admin') return { created: false };
@@ -246,7 +246,8 @@ export async function bootstrapAdmin(email: string): Promise<{ created: boolean 
     if (existingUser) throw new Error('This email has an existing user record. Bootstrap never silently elevates an existing user.');
     const id = randomUUID();
     await execute("INSERT INTO allowed_emails (id, email, role) VALUES (?, ?, 'admin')", [id, email], connection);
-    await execute("INSERT INTO audit_logs (id, event, target, metadata) VALUES (?, 'admin.bootstrapped', ?, ?)", [randomUUID(), email, JSON.stringify({ source: 'cli' })], connection);
+    await execute("INSERT INTO audit_logs (id, event, target, metadata) VALUES (?, 'admin.bootstrapped', ?, ?)", [randomUUID(), email, JSON.stringify({ source })], connection);
     return { created: true };
-  });
+  };
+  return connection ? create(connection) : transaction(create);
 }

@@ -19,7 +19,7 @@ GRANT SELECT ON cusa_identity.audit_outbox TO 'cusa_audit_reader'@'archive-host'
 
 Runtime ต้องไม่มี `UPDATE`, `DELETE`, `ALTER`, `DROP` หรือสิทธิ์ DDL บน `audit_logs` หลีกเลี่ยง grant ระดับ schema ที่ทำให้ข้อจำกัด table ถูกครอบทับ; ใช้สิทธิ์ที่จำเป็นแยกตาม table อื่นด้วย Worker จำเป็นต้องลบจาก **outbox** หลังย้ายสำเร็จ และไม่ลบจาก audit log
 
-ส่ง credentials ผ่าน secret manager/environment (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_TLS`, `DB_CA_FILE`) ใช้ verified TLS และบัญชี read-only สำหรับ export เก็บไฟล์ archive ซึ่งมีข้อมูลส่วนบุคคลในพื้นที่เข้ารหัสและจำกัดสิทธิ์ให้ทีมที่ได้รับอนุญาต
+ส่ง credentials ผ่าน secret manager/environment (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_TLS`, `DB_CA_FILE`) ใช้ verified TLS เมื่อเชื่อมผ่าน endpoint สาธารณะ หรือเชื่อมผ่าน loopback/Private IP ภายในที่ผู้ดูแลตรวจสอบแล้วตาม [คู่มือ Plesk](PLESK.md) ใช้บัญชี read-only สำหรับ export เก็บไฟล์ archive ซึ่งมีข้อมูลส่วนบุคคลในพื้นที่เข้ารหัสและจำกัดสิทธิ์ให้ทีมที่ได้รับอนุญาต
 
 ## Monitoring และ readiness
 

@@ -1,10 +1,18 @@
 import { z } from 'zod';
 import { pool } from './db.js';
 import { bootstrapAdmin } from './models/adminModel.js';
+import { withMigrationLock } from './services/migrations.js';
 
 async function bootstrap() {
   const email = z.string().trim().toLowerCase().max(254).email().parse(process.env.BOOTSTRAP_ADMIN_EMAIL);
-  const result = await bootstrapAdmin(email);
+  const result = await withMigrationLock(async connection => {
+    await connection.beginTransaction();
+    try {
+      const created = await bootstrapAdmin(email, connection);
+      await connection.commit();
+      return created;
+    } catch (error) { await connection.rollback(); throw error; }
+  });
   console.log(result.created ? `Added initial administrator: ${email}` : `Administrator already exists: ${email}`);
 }
 

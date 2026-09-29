@@ -1,0 +1,19 @@
+.install-page{min-height:100dvh;background:#f5f7fb;padding:48px 20px;color:#172238}
+.install-main{width:min(100%,560px);margin:0 auto}
+.install-main>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
+.install-label{font-size:12px;color:#67758a}
+.install-card{background:#fff;border:1px solid #e1e7ef;border-radius:20px;padding:32px;box-shadow:0 8px 28px #17304e06}
+.install-icon{width:52px;height:52px;border-radius:14px;background:#edf3ff;color:#315acb;display:grid;place-items:center;margin-bottom:20px}
+.install-icon.complete{background:#e9f7ef;color:#247348}
+.install-card h1{font-size:24px;line-height:1.4;margin:0 0 10px}
+.install-description{font-size:14px;line-height:1.8;color:#657389;margin:0 0 24px}
+.install-card form{display:grid;gap:16px}
+.install-note,.install-security{font-size:12px;line-height:1.8;color:#68758a;margin:0}
+.install-security{display:flex;align-items:flex-start;gap:8px}.install-security svg{flex:none;margin-top:3px}
+.install-details{margin:0;padding:16px;background:#f7f9fc;border-radius:12px;display:grid;gap:14px;font-size:13px}
+.install-details>div{display:grid;grid-template-columns:100px 1fr;gap:12px}.install-details dt{color:#64748b}.install-details dd{margin:0;overflow-wrap:anywhere}
+.install-confirm{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.7}.install-confirm input{margin-top:5px;flex:none;accent-color:#315acb}
+.install-steps{padding-left:22px;font-size:14px;line-height:1.9;margin:20px 0 28px}.install-steps li+li{margin-top:10px}.install-steps code{font-size:12px;overflow-wrap:anywhere}
+.install-card strong{overflow-wrap:anywhere}.install-card .inline-error{margin-bottom:18px}
+.install-main>footer{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:28px;font-size:12px;color:#7b8799}
+@media(max-width:480px){.install-page{padding:28px 16px}.install-card{padding:24px 20px}.install-card h1{font-size:22px}.install-details>div{grid-template-columns:1fr;gap:3px}.install-label{font-size:11px}}

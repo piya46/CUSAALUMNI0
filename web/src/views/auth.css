@@ -19,6 +19,8 @@
 .auth-demo button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; padding: 5px; color: #53705b; }
 .auth-demo p { color: #91988f; font-size: 10px; margin-top: 2px; }
 .auth-footer { text-align: center; color: #949c92; font-size: 10px; letter-spacing: .1px; }
+.auth-legal-note { margin: -12px 0 22px; color: #697869; font-size: 11px; line-height: 1.9; }
+.auth-legal-note a { color: #3e6147; text-decoration: underline; text-underline-offset: 3px; margin: 0 3px; }
 .auth-application { display: flex; align-items: center; gap: 13px; background: #f6f8f4; border: 1px solid #e8ede4; border-radius: 9px; padding: 14px; text-align: left; margin-bottom: 28px; }
 .auth-application-icon { display: grid; place-items: center; width: 38px; height: 38px; background: #e5edde; color: #607c56; border-radius: 8px; flex-shrink: 0; }
 .auth-application div { min-width: 0; }

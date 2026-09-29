@@ -1,0 +1,9 @@
+.legal-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; font-size: 12px; line-height: 1.8; color: #596d5f; }
+.legal-links a { text-decoration: underline; text-underline-offset: 4px; }
+.legal-links a:hover { color: #264e3e; }
+.legal-links a:focus-visible { outline: 2px solid #315f49; outline-offset: 4px; border-radius: 2px; }
+.legal-link-hint { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.auth-footer .legal-links { margin-bottom: 12px; }
+.app-footer:has(.legal-links) { flex-wrap: wrap; gap: 12px; }
+.app-footer .legal-links { font-size: 11px; }
+@media (max-width: 480px) { .legal-links { gap: 6px 10px; font-size: 11px; } }

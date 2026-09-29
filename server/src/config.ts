@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { permitsUnencryptedDatabase } from './services/databaseTransport.js';
 
 dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)), quiet: true } as dotenv.DotenvConfigOptions);
 
@@ -24,16 +25,24 @@ const schema = z.object({
   OTP_MINUTES: z.coerce.number().int().min(1).max(10).default(5),
   TRUST_PROXY: z.enum(['false', 'loopback', '1']).default('false'),
   REDIS_URL: z.string().default(''),
+  INSTALL_ENABLED: z.enum(['true', 'false']).default('false'),
+  INSTALL_TOKEN: z.string().default(''),
+  BOOTSTRAP_ADMIN_EMAIL: z.string().trim().toLowerCase().default(''),
 });
 const env = schema.parse(process.env);
 const origin = new URL(env.APP_ORIGIN);
-if (origin.origin !== env.APP_ORIGIN || !['http:', 'https:'].includes(origin.protocol)) throw new Error('APP_ORIGIN must be an HTTP(S) origin without a trailing slash or path');
+if (origin.origin !== env.APP_ORIGIN || origin.hostname.includes(',') || !['http:', 'https:'].includes(origin.protocol)) throw new Error('APP_ORIGIN must be one HTTP(S) origin without a trailing slash or path; do not combine multiple URLs');
 const mailConfigured = env.MAIL_MODE !== 'disabled' && z.email().safeParse(env.GMAIL_SENDER).success && (env.MAIL_MODE === 'gmail_oauth' ? Boolean(env.GMAIL_REFRESH_TOKEN && (env.GMAIL_CLIENT_ID || env.GOOGLE_CLIENT_ID) && (env.GMAIL_CLIENT_SECRET || env.GOOGLE_CLIENT_SECRET)) : Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY));
 if (env.MAIL_MODE === 'workspace_service_account' && /@(gmail|googlemail)\.com$/i.test(env.GMAIL_SENDER)) throw new Error('Personal Gmail requires MAIL_MODE=gmail_oauth; service account delegation requires Google Workspace');
 const googleConfigured = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 const configured = Boolean(googleConfigured && mailConfigured && env.DB_USER && env.DB_PASSWORD && env.SESSION_SECRET.length >= 32 && Buffer.from(env.ENCRYPTION_KEY, 'base64').length === 32);
+if (env.INSTALL_ENABLED === 'true' && (!/^[A-Za-z0-9_-]{43}$/.test(env.INSTALL_TOKEN) || !z.email().safeParse(env.BOOTSTRAP_ADMIN_EMAIL).success)) {
+  throw new Error('Installation requires a random 32-byte base64url INSTALL_TOKEN and valid BOOTSTRAP_ADMIN_EMAIL');
+}
 export function assertServerConfiguration() {
-  if (env.NODE_ENV === 'production' && (!configured || origin.protocol !== 'https:' || env.DB_TLS !== 'true')) throw new Error('Production requires complete credentials, HTTPS APP_ORIGIN, 32-byte ENCRYPTION_KEY, SESSION_SECRET >=32 characters, and verified DB TLS');
+  if (env.NODE_ENV !== 'production') return;
+  if (!configured || origin.protocol !== 'https:') throw new Error('Production requires complete credentials, HTTPS APP_ORIGIN, 32-byte ENCRYPTION_KEY, and SESSION_SECRET >=32 characters');
+  if (env.DB_TLS !== 'true' && !permitsUnencryptedDatabase(env.DB_HOST)) throw new Error('Production DB_TLS=false requires localhost, a loopback IP, or a private IP on a trusted internal network; use verified TLS for public database endpoints');
 }
 export const config = {
   nodeEnv: env.NODE_ENV, port: env.PORT, appOrigin: env.APP_ORIGIN,
@@ -47,5 +56,6 @@ export const config = {
   trustProxy: env.TRUST_PROXY === '1' ? 1 : env.TRUST_PROXY === 'loopback' ? 'loopback' : false,
   secureCookies: origin.protocol === 'https:',
   redisUrl: env.REDIS_URL,
+  installEnabled: env.INSTALL_ENABLED === 'true', installToken: env.INSTALL_TOKEN, bootstrapAdminEmail: env.BOOTSTRAP_ADMIN_EMAIL,
   dbConnectionLimit:env.DB_CONNECTION_LIMIT,dbQueueLimit:env.DB_QUEUE_LIMIT,introspectionCacheSeconds:env.INTROSPECTION_CACHE_SECONDS,
 };

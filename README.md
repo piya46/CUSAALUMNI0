@@ -30,17 +30,38 @@ npm run db:bootstrap
 npm run dev
 ```
 
-`BOOTSTRAP_ADMIN_EMAIL` ใช้เฉพาะคำสั่ง bootstrap โดยไม่ยกระดับผู้ใช้ที่มีอยู่เงียบ ๆ และไม่เพิ่มผู้ดูแลใหม่นอกการตั้งค่าเริ่มต้น ตั้งค่า host เริ่มต้นตามที่ระบุเป็น `203.170.190.137`; ยังต้องกรอกชื่อ database, username/password จริง และ CA เพิ่มเติมเฉพาะกรณี private CA/self-signed ไม่มี migration อัตโนมัติเมื่อเปิดแอป
+`BOOTSTRAP_ADMIN_EMAIL` ใช้ในคำสั่ง bootstrap หรือตัวติดตั้งครั้งแรก โดยไม่ยกระดับผู้ใช้ที่มีอยู่เงียบ ๆ และไม่เพิ่มผู้ดูแลใหม่นอกการตั้งค่าเริ่มต้น ตั้งค่า host เริ่มต้นตามที่ระบุเป็น `203.170.190.137`; ยังต้องกรอกชื่อ database, username/password จริง และ CA เพิ่มเติมเฉพาะกรณี private CA/self-signed ไม่มี migration อัตโนมัติเมื่อเปิดแอป
+
+บน Plesk สามารถสร้างตารางและผู้ดูแลผ่าน **`/install`** แทนคำสั่ง migration/bootstrap ในครั้งแรกได้ ต้องเปิดด้วย `INSTALL_ENABLED=true` และรหัสสุ่ม `INSTALL_TOKEN` จากฝั่งเซิร์ฟเวอร์ หลังสำเร็จจะล็อกไว้ใน DB แล้วให้ปิด flag/ล้าง token และ Restart App ดู [คู่มือติดตั้งผ่านเว็บ](docs/INSTALL.md) ไม่ต้องลบโฟลเดอร์ install และไม่ใช้หน้าเว็บนี้อัปเดตฐานข้อมูลที่มีผู้ใช้อยู่แล้ว
 
 `DB_CA_FILE` เว้นว่างได้เมื่อ certificate ของฐานข้อมูลตรวจสอบกับ trusted CA ของ Node.js ได้ ระบบยังตรวจสอบ certificate และชื่อ host ตามปกติ หากใช้ private CA/self-signed ให้ขอ CA จากผู้ให้บริการฐานข้อมูล; การไม่มีไฟล์ CA ไม่ได้แปลว่าปิด TLS ได้
 
-MariaDB 10.11+ ใช้ InnoDB, UTC และ TLS แบบตรวจสอบ certificate หาก certificate ออกให้ชื่อ DNS ให้ใช้ชื่อที่ชี้ไปยัง host นี้ หรือ certificate ที่มี IP ใน SAN; อย่าปิดการตรวจสอบ TLS สำหรับ production
+MariaDB 10.11+ ใช้ InnoDB และ UTC การเชื่อมต่อปลายทางสาธารณะใน Production ต้องใช้ TLS แบบตรวจสอบ certificate หาก certificate ออกให้ชื่อ DNS ให้ใช้ชื่อนั้น หรือ certificate ที่มี IP ใน SAN สำหรับฐานข้อมูลบนเครื่องเดียวกันหรือเครือข่ายภายในที่ผู้ดูแลตรวจสอบแล้ว รองรับ `DB_TLS=false` เมื่อ `DB_HOST` เป็น `localhost`, loopback IP หรือ Private IP ตาม [คู่มือ Plesk](docs/PLESK.md) หน้าเว็บ Production ยังคงต้องเป็น HTTPS
 
 ## หน้า Login และสิทธิ์ของแต่ละ Service
 
 หน้า `/login` ใช้เข้าสู่ระบบกลาง เว็บปลายทางเริ่มผ่าน `/api/sso/authorize` พร้อม PKCE แล้ว CUSA SSO จะแสดงชื่อและโดเมนที่ลงทะเบียนไว้ ผ่าน Google + MFA และกลับไปยังระบบเดิม
 
 ชื่อ–นามสกุลอยู่ที่บัญชีกลาง หน่วยงานและหลาย Role แยกตาม Service ผู้ดูแลสร้าง Role เองและกำหนดสมาชิกได้ในเมนู **สิทธิ์แต่ละ Service** ต้องรัน migration `002_service_roles.sql` และกำหนดสมาชิกให้ผู้ใช้เดิมก่อนใช้ SSO; ไม่มีการให้สิทธิ์ทุก Service อัตโนมัติ ดู [คู่มือสิทธิ์แต่ละ Service](docs/SERVICE-ACCESS.md) และ [คู่มือเชื่อมต่อ](docs/SSO-INTEGRATION.md)
+
+## นโยบายและข้อกำหนดการใช้งาน
+
+หน้า **`/privacy`** และ **`/terms`** เปิดอ่านได้ก่อนเข้าสู่ระบบ มีข้อมูลติดต่อสมาคม สารบัญ และปุ่มพิมพ์/บันทึก PDF ลิงก์จากหน้า Login เปิดแท็บใหม่เพื่อรักษาขั้นตอน SSO/MFA ดู [เนื้อหาและการดูแลเอกสารนโยบาย](docs/LEGAL.md)
+
+## Redis และ Upstash
+
+`REDIS_URL` เป็น connection URL ของ Redis ที่คุณสร้างหรือผู้ดูแล Host จัดเตรียมให้ ไม่ใช่ URL ของ MariaDB หรือเว็บ CUSA SSO ค่าเริ่มต้นเว้นว่างเพื่อใช้ตัวนับ Rate Limit ใน MariaDB จึงไม่จำเป็นต้องสร้าง Redis เพื่อเริ่มพัฒนา
+
+ถ้าใช้ Upstash: เข้า [Upstash Console](https://console.upstash.com/) สร้างหรือเลือก Redis Database → **Connect → TCP** แล้วคัดลอก URL แบบ TLS ใส่ `.env` หรือ Plesk Custom Environment Variables:
+
+```dotenv
+# ตัวอย่างโครงสร้างเท่านั้น ใช้ URL เต็มที่คัดลอกจาก Upstash
+REDIS_URL=rediss://default:YOUR_PASSWORD@YOUR_ENDPOINT:YOUR_PORT
+```
+
+ใช้ host/port/password จากฐานข้อมูลนั้น ไม่ใช้ `UPSTASH_REDIS_REST_URL` ที่ขึ้นต้นด้วย `https://` หรือ REST token เพราะโค้ดใช้แพ็กเกจ `redis` ผ่าน TCP ดู [คู่มือการเชื่อมต่อ TLS ของ Upstash](https://upstash.com/docs/redis/troubleshooting/econn_reset) Host ต้องอนุญาต TCP ขาออกไปยัง endpoint/port ที่กำหนด จากนั้น restart แอป ไม่ต้องติดตั้ง Redis เพิ่มบน Plesk เมื่อใช้บริการภายนอกนี้
+
+เมื่อกำหนด Redis แล้ว หากเชื่อมต่อหรือประมวลผลคำสั่งไม่ได้ endpoint ที่ใช้ shared rate limit จะตอบ 503 และ readiness ไม่ผ่าน ไม่มีการลดระดับการป้องกันหรือ fallback ไป MariaDB โดยเงียบ อย่าใส่ URL ที่มีรหัสผ่านใน frontend, Git หรือ log; ตรวจ `/api/ready` และการทำงานจริงหลังตั้งค่า โดย readiness ยังตรวจฐานข้อมูลและ Audit Worker ด้วย
 
 ## Google Login และการส่ง OTP
 

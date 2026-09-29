@@ -74,11 +74,38 @@ DB_CA_FILE=
 
 `DB_CA_FILE` ว่างได้เมื่อใบรับรอง DB ตรวจสอบกับ trusted CA ของ Node.js ได้ หากใช้ private CA ให้ขอไฟล์จากผู้ดูแล DB และระบุ path ที่อ่านได้ ต้องตรวจสอบชื่อ Host ของ certificate ให้ตรงด้วย
 
+### ฐานข้อมูลภายใน HostAtom / Plesk
+
+หาก Node.js และ MariaDB อยู่บนเครื่องเดียวกัน และ Plesk → Databases ระบุ Database server เป็น `localhost:3306` ให้ตั้งค่าบน **Host ที่ Deploy** ดังนี้:
+
+```dotenv
+NODE_ENV=production
+APP_ORIGIN=https://sso.reunion.scicu-alumni.com
+DB_HOST=localhost
+DB_PORT=3306
+DB_TLS=false
+DB_CA_FILE=
+```
+
+ภาพ Connection information ที่ผู้ใช้ส่งมาระบุ `localhost:3306` ให้แยก host และ port ตามตัวอย่างข้างต้น ค่านี้ใช้กับแอปที่อยู่ใน network namespace เดียวกับฐานข้อมูลและรับ TCP loopback จริง หากต้องระบุ IPv4 ชัดเจนให้ใช้ `127.0.0.1`; หาก listener ใช้ IPv6 ให้ใช้ `::1` ตามที่ Host แจ้ง [คู่มือ HostAtom](https://kb.hostatom.com/content/1024/) อธิบายว่า Database Host ใช้ localhost เมื่ออยู่เครื่องเดียวกัน
+
+หากฐานข้อมูลอยู่อีกเครื่องในเครือข่ายภายใน ให้ใช้ Private IP ที่ Host แจ้งแทน `127.0.0.1` Production อนุญาต `DB_TLS=false` เฉพาะ `localhost`, loopback IPv4/IPv6, IPv4 ช่วง `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` และ IPv6 ULA `fc00::/7` การระบุ Private IP ไม่ได้เข้ารหัสข้อมูลหรือยืนยันว่าเครือข่ายถูกแยกจากลูกค้ารายอื่น ผู้ดูแลต้องตรวจเส้นทางและการจำกัดการเข้าถึงตามสภาพแวดล้อมจริง
+
+ชื่อผู้ให้บริการเดียวกันหรือชื่อ DNS ที่มีคำว่า internal ไม่ใช่หลักฐานของเส้นทางภายใน โค้ดไม่อนุมาน IP ภายในจาก hostname ทั่วไป หาก Host ให้ hostname ภายในมา ให้ขอ endpoint ที่เหมาะสม/Private IP จาก Host หรือใช้ TLS ที่ตรวจสอบใบรับรองได้ สำหรับ IP สาธารณะ เช่น `203.170.190.137` โหมด Production ยังต้องใช้ `DB_TLS=true`
+
+อย่าเปลี่ยน `DB_HOST` บนเครื่องพัฒนาเป็น `127.0.0.1` เพื่อชี้ไปที่ HostAtom เพราะจะหมายถึงฐานข้อมูลบนเครื่องพัฒนาของคุณเอง ค่าทดสอบจากเครื่องพัฒนาและค่าบน Host ต้องแยกกัน การปิด DB TLS ไม่เปลี่ยนข้อกำหนด HTTPS ของเว็บ, Secure cookie หรือ TLS ของ Upstash Redis
+
 `SSO_DOMAIN` ใช้สำหรับ Caddy ใน Docker Compose เท่านั้น ไม่จำเป็นในวิธี Plesk นี้ ส่วน `PORT` ไม่ใช่พอร์ตที่ต้องเปิดรับจากอินเทอร์เน็ต เพราะ [Passenger จัดการ socket และรับคำขอให้ Node.js](https://www.phusionpassenger.com/library/indepth/nodejs/reverse_port_binding.html)
+
+`REDIS_URL` เว้นว่างได้เพื่อใช้ MariaDB สำหรับตัวนับ Rate Limit หากใช้ Upstash ให้สร้าง/เลือก Redis Database แล้วคัดลอก **Connect → TCP** URL แบบ `rediss://default:PASSWORD@HOST:PORT` มาใส่ที่นี่ ไม่ใช้ HTTPS REST URL และต้องอนุญาต TCP ขาออกจาก Host ไปยัง endpoint/port ของ Upstash จากนั้น Restart App ดู [ขั้นตอน Redis](../README.md#redis-และ-upstash)
+
+หลัง deploy ตรวจว่า `/privacy` และ `/terms` เปิดได้โดยไม่ล็อกอิน และใช้ URL จริงของสองหน้านี้เมื่อตั้งค่า Privacy Policy/Terms of Service ใน Google OAuth consent screen ทบทวนรายละเอียดองค์กรและการปฏิบัติงานตาม [คู่มือเอกสารนโยบาย](LEGAL.md) ก่อนประกาศใช้
 
 ตรวจ `TRUST_PROXY` กับผู้ดูแล Host ตาม proxy chain จริง หาก proxy ส่ง IP ผู้ใช้ใน forwarded headers ต้องตั้งให้ Express เชื่อถือเฉพาะ proxy ที่ควบคุมได้ เพื่อให้ rate limit และ Audit บันทึก IP ถูกต้อง ค่าของ Docker Compose ไม่ใช่ข้อกำหนดของ Plesk
 
-ก่อนเปิดแอป ให้รันด้วยบัญชี migration ที่มีสิทธิ์ DDL และ runtime account ที่เหมาะสมตาม README:
+สำหรับติดตั้งครั้งแรกบนฐานข้อมูลว่าง ใช้หน้า **`/install`** ได้ตาม [คู่มือติดตั้งผ่านเว็บ](INSTALL.md): เปิด `INSTALL_ENABLED=true`, ตั้ง `INSTALL_TOKEN` และ `BOOTSTRAP_ADMIN_EMAIL`, Restart App แล้วดำเนินการในหน้าเว็บ เมื่อเสร็จปิด flag/ล้าง token และ Restart App อีกครั้ง ไม่ต้องลบโฟลเดอร์ ตัวติดตั้งสร้างตารางและผู้ดูแลเท่านั้น; ต้องสร้าง Database ใน Plesk และ build แอปก่อน
+
+หากเลือกใช้ Terminal แทนหน้าเว็บ หรือเป็นการอัปเดตระบบเดิม ให้รันด้วยบัญชี migration ที่มีสิทธิ์ DDL และ runtime account ที่เหมาะสมตาม README:
 
 ```sh
 npm run db:migrate

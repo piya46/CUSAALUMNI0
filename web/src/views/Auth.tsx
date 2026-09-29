@@ -5,11 +5,12 @@ import { api } from '../models/api';
 import type { Identity } from '../models/types';
 import type { LoginContext } from '../models/login';
 import { Brand } from '../components/ui';
+import { LegalLinks } from '../components/LegalLinks';
 import './auth.css';
 
 export interface ServerStatus { configured: boolean; mailConfigured: boolean; googleConfigured: boolean }
 function AuthLayout({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
-  return <div className="auth-page"><main className="auth-main"><header className="auth-brand"><Brand /></header><section className="auth-card">{children}</section>{footer}</main><footer className="auth-footer">© {new Date().getFullYear()} CUSA SSO</footer></div>;
+  return <div className="auth-page"><main className="auth-main"><header className="auth-brand"><Brand /></header><section className="auth-card">{children}</section>{footer}</main><footer className="auth-footer"><LegalLinks /><span>© {new Date().getFullYear()} CUSA SSO</span></footer></div>;
 }
 function ApplicationContext({ context }: { context?: LoginContext | null }) {
   if (!context) return null;
@@ -24,6 +25,7 @@ export function Login({ status, checking, context, onDemo, onRetry }: { status: 
   return <AuthLayout footer={!context && !status?.configured ? <div className="auth-demo"><button onClick={onDemo}>เปิดโหมดตัวอย่าง <ArrowRight size={14} /></button><p>ทดลองหน้าจอด้วยข้อมูลจำลอง</p></div> : undefined}>
     <ApplicationContext context={context} />
     <h1>เข้าสู่ระบบ</h1><p className="auth-description">ใช้บัญชี Google ของคุณเพื่อดำเนินการต่อ</p>
+    <p className="auth-legal-note">การดำเนินการต่ออยู่ภายใต้<a href="/terms" target="_blank" rel="noopener noreferrer">ข้อกำหนดการใช้งาน</a> โปรดอ่าน<a href="/privacy" target="_blank" rel="noopener noreferrer">นโยบายความเป็นส่วนตัว</a>ก่อนเข้าสู่ระบบ</p>
     {authError && <div className="inline-error" role="alert">เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบว่าอีเมลได้รับอนุญาต แล้วลองอีกครั้ง</div>}
     {status?.configured ? <a className="auth-google" href={href}><GoogleMark />ดำเนินการต่อด้วย Google<ArrowRight size={17} /></a> : <button className="auth-google" disabled><GoogleMark />ดำเนินการต่อด้วย Google<ArrowRight size={17} /></button>}
     <p className="auth-note"><LockKeyhole size={14} /><span>สำหรับอีเมลที่ได้รับอนุญาต<br />ยืนยันอีกขั้นก่อนเข้าใช้งาน</span></p>
