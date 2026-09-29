@@ -1,4 +1,4 @@
-# CUSA Identity
+# CUSA SSO
 
 ระบบ User Management และ SSO ด้วย **Node.js / Express + React + MariaDB** ตามโครงสร้าง **MVC** พร้อมหน้าเว็บภาษาไทย รองรับ Google Login, Email OTP, Authenticator TOTP, recovery codes, allowlist, API keys และ API ยืนยันตัวตนสำหรับระบบภายใน
 
@@ -30,9 +30,17 @@ npm run db:bootstrap
 npm run dev
 ```
 
-`BOOTSTRAP_ADMIN_EMAIL` ใช้เฉพาะคำสั่ง bootstrap โดยไม่ยกระดับผู้ใช้ที่มีอยู่เงียบ ๆ และไม่เพิ่มผู้ดูแลใหม่นอกการตั้งค่าเริ่มต้น ตั้งค่า host เริ่มต้นตามที่ระบุเป็น `203.170.190.137`; ยังต้องกรอกชื่อ database, username/password และ CA จริง ไม่มี migration อัตโนมัติเมื่อเปิดแอป
+`BOOTSTRAP_ADMIN_EMAIL` ใช้เฉพาะคำสั่ง bootstrap โดยไม่ยกระดับผู้ใช้ที่มีอยู่เงียบ ๆ และไม่เพิ่มผู้ดูแลใหม่นอกการตั้งค่าเริ่มต้น ตั้งค่า host เริ่มต้นตามที่ระบุเป็น `203.170.190.137`; ยังต้องกรอกชื่อ database, username/password จริง และ CA เพิ่มเติมเฉพาะกรณี private CA/self-signed ไม่มี migration อัตโนมัติเมื่อเปิดแอป
+
+`DB_CA_FILE` เว้นว่างได้เมื่อ certificate ของฐานข้อมูลตรวจสอบกับ trusted CA ของ Node.js ได้ ระบบยังตรวจสอบ certificate และชื่อ host ตามปกติ หากใช้ private CA/self-signed ให้ขอ CA จากผู้ให้บริการฐานข้อมูล; การไม่มีไฟล์ CA ไม่ได้แปลว่าปิด TLS ได้
 
 MariaDB 10.11+ ใช้ InnoDB, UTC และ TLS แบบตรวจสอบ certificate หาก certificate ออกให้ชื่อ DNS ให้ใช้ชื่อที่ชี้ไปยัง host นี้ หรือ certificate ที่มี IP ใน SAN; อย่าปิดการตรวจสอบ TLS สำหรับ production
+
+## หน้า Login และสิทธิ์ของแต่ละ Service
+
+หน้า `/login` ใช้เข้าสู่ระบบกลาง เว็บปลายทางเริ่มผ่าน `/api/sso/authorize` พร้อม PKCE แล้ว CUSA SSO จะแสดงชื่อและโดเมนที่ลงทะเบียนไว้ ผ่าน Google + MFA และกลับไปยังระบบเดิม
+
+ชื่อ–นามสกุลอยู่ที่บัญชีกลาง หน่วยงานและหลาย Role แยกตาม Service ผู้ดูแลสร้าง Role เองและกำหนดสมาชิกได้ในเมนู **สิทธิ์แต่ละ Service** ต้องรัน migration `002_service_roles.sql` และกำหนดสมาชิกให้ผู้ใช้เดิมก่อนใช้ SSO; ไม่มีการให้สิทธิ์ทุก Service อัตโนมัติ ดู [คู่มือสิทธิ์แต่ละ Service](docs/SERVICE-ACCESS.md) และ [คู่มือเชื่อมต่อ](docs/SSO-INTEGRATION.md)
 
 ## Google Login และการส่ง OTP
 
@@ -95,6 +103,8 @@ Pool ค่าเริ่มต้น 20 connections/instance, bounded queue 10
 Audit เก็บ success/failure, actor snapshot, session record ID (ไม่ใช่ cookie credential), IP และ user agent คำขอรอการ enqueue ถาวร แล้ว worker ย้ายไป append-only logs แบบ transaction; ไม่ทิ้ง Promise แบบ fire-and-forget `/api/ready` ตรวจ DB และ backlog ของ audit ใช้ archive แยก credential และตรวจ checksum ก่อนวางแผน retention ขณะนี้ไม่มีการลบ audit อัตโนมัติหรือ hash chain
 
 ## Build, test, deploy
+
+ถ้าใช้ Plesk บน Linux ให้ดู [คู่มือตั้งค่า Plesk](docs/PLESK.md): ใช้ Application Root ของโปรเจกต์, Document Root เป็น `public` ว่าง และ Startup File `app.cjs` เพื่อให้ Node.js ส่งหน้า React พร้อม Security Headers
 
 ```sh
 npm run typecheck

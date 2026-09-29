@@ -68,3 +68,96 @@ test('demo application, one-time API key, revocation and MFA recovery setup',asy
   await expect(page.getByRole('button',{name:'ปิดใช้งาน',exact:true})).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+const ssoParams = new URLSearchParams({ response_type: 'code', client_id: 'b7ab297a-8903-4550-b3cc-c11daed7a824', redirect_uri: 'https://people.example.com/callback', state: 'S'.repeat(43), code_challenge: 'A'.repeat(43), code_challenge_method: 'S256' });
+const returnTo = `/api/sso/authorize?${ssoParams}`;
+const loginUrl = `/login?${new URLSearchParams({ returnTo, name: 'Untrusted application name' })}`;
+const contextBody = { application: { name: 'People & HR', origin: 'https://people.example.com' }, returnTo };
+const signedIn = { user: { id: 'test-user', name: 'Test User', email: 'member@example.com', role: 'user', totpEnabled: true }, csrfToken: 'test-csrf', requiresMfa: false, mfaMethod: 'totp' };
+
+test('central login shows verified service, keeps target, and blocks unsafe login requests', async ({ page }) => {
+  await page.route('**/api/auth/status', route => route.fulfill({ json: { configured: true } }));
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, json: { error: 'Login required' } }));
+  await page.route('**/api/sso/login-context?**', route => route.fulfill({ json: contextBody }));
+  await page.goto(loginUrl);
+  await expect(page).toHaveTitle('CUSA SSO');
+  await expect(page.locator('.auth-application')).toContainText('People & HR');
+  await expect(page.getByText('Untrusted application name')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'เปิดโหมดตัวอย่าง' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'ดำเนินการต่อด้วย Google' })).toHaveAttribute('href', `/api/auth/google/start?${new URLSearchParams({ returnTo })}`);
+  await page.screenshot({ path: 'test-results/service-login-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: 'test-results/service-login-mobile.png', fullPage: true });
+  await page.goto('/login?returnTo=https%3A%2F%2Fattacker.example');
+  await expect(page.getByRole('heading', { name: 'ไม่สามารถเข้าสู่ระบบได้' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'ดำเนินการต่อด้วย Google' })).toHaveCount(0);
+});
+
+test('MFA resumes the original service and existing sessions show continuation without admin loading', async ({ page }) => {
+  let verified = false; const adminRequests: string[] = [];
+  page.on('request', req => { if (req.url().includes('/api/admin/')) adminRequests.push(req.url()); });
+  await page.route('**/api/auth/status', route => route.fulfill({ json: { configured: true } }));
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { ...signedIn, requiresMfa: !verified } }));
+  await page.route('**/api/sso/login-context?**', route => route.fulfill({ json: contextBody }));
+  await page.route('**/api/auth/totp/verify', async route => {
+    expect(route.request().postDataJSON()).toEqual({ code: '123456' });
+    expect(route.request().headers()['x-csrf-token']).toBe('test-csrf');
+    verified = true; await route.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/api/sso/authorize?**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Returned to authorization</h1>' }));
+  await page.goto(loginUrl);
+  await expect(page.getByRole('heading', { name: 'ยืนยันว่าเป็นคุณ' })).toBeVisible();
+  await expect(page.locator('.auth-application')).toContainText('People & HR');
+  await page.getByLabel('รหัสยืนยัน', { exact: true }).fill('123456');
+  await page.getByRole('button', { name: 'ยืนยันและเข้าสู่ระบบ' }).click();
+  await expect(page.getByRole('heading', { name: 'Returned to authorization' })).toBeVisible();
+  await page.goto(loginUrl);
+  await expect(page.getByRole('heading', { name: 'พร้อมเข้าใช้งาน' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'ดำเนินการต่อ', exact: true })).toHaveAttribute('href', returnTo);
+  expect(adminRequests).toEqual([]);
+});
+
+test('user profile and custom service roles support multiple assignments without leaking into other services', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/login'); await page.getByRole('button', { name: 'เปิดโหมดตัวอย่าง' }).click();
+  const nav = page.getByRole('navigation', { name: 'เมนูหลัก' });
+  await nav.getByRole('button', { name: /^ผู้ใช้งาน/ }).click();
+  await page.getByRole('button', { name: 'รายละเอียด kittipong@example.com', exact: true }).click();
+  let dialog = page.getByRole('dialog');
+  await dialog.getByLabel('ชื่อ', { exact: true }).fill('สมชาย');
+  await dialog.getByLabel('นามสกุล', { exact: true }).fill('ใจดี');
+  await dialog.getByRole('button', { name: 'บันทึกข้อมูล' }).click();
+  await expect(page.getByRole('row').filter({ hasText: 'kittipong@example.com' })).toContainText('สมชาย ใจดี');
+  await nav.getByRole('button', { name: 'สิทธิ์แต่ละ Service', exact: true }).click();
+  await page.getByRole('button', { name: 'เพิ่ม Role', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('รหัส Role').fill('approver'); await dialog.getByLabel('ชื่อ Role').fill('ผู้อนุมัติ');
+  await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+  await page.getByRole('button', { name: 'เพิ่มสมาชิก', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByRole('combobox', { name: 'ผู้ใช้', exact: true }).selectOption('user-3');
+  await dialog.getByLabel('หน่วยงานใน Service นี้').fill('ฝ่ายการเงิน');
+  await dialog.getByRole('checkbox', { name: /ผู้อนุมัติ/ }).check();
+  await dialog.getByRole('checkbox', { name: /ผู้ดูข้อมูล/ }).check();
+  await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+  let row = page.getByRole('row').filter({ hasText: 'kittipong@example.com' });
+  await expect(row).toContainText('ฝ่ายการเงิน'); await expect(row).toContainText('approver'); await expect(row).toContainText('viewer');
+  await page.screenshot({ path: 'test-results/service-access-desktop.png', fullPage: true });
+  await page.getByRole('combobox', { name: 'Service', exact: true }).selectOption('app-2');
+  await expect(page.getByRole('heading', { name: 'Role ของ People & HR' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'kittipong@example.com' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'แก้ไข Role approver' })).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Service', exact: true }).selectOption('app-1');
+  await page.getByRole('button', { name: 'ลบ Role approver' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('ยังมีผู้ใช้');
+  await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+  await page.getByRole('button', { name: 'ถอนสมาชิก kittipong@example.com' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: 'kittipong@example.com' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'ลบ Role approver' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'แก้ไข Role approver' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

@@ -45,7 +45,7 @@ function fakeDatabase() {
       }
       if (sql.includes('FROM access_tokens t')) {
         return (state.live && (!params[1] || params[1] === applicationId)
-          ? [{ sub: 'user-1', email: 'user@example.com', name: 'User', aud: applicationId,
+          ? [{ given_name: 'Test', family_name: 'User', department: 'IT', roles: '["viewer"]', sub: 'user-1', email: 'user@example.com', name: 'User', aud: applicationId,
             exp: state.tokenExpiresAt, scope: 'identity:read', redirectUri }] : []) as T[];
       }
       if (sql.includes('FROM applications a')) return (state.live ? [{ id: applicationId }] : []) as T[];

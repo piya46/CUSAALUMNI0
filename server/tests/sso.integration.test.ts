@@ -44,6 +44,10 @@ test('MariaDB SSO enforces PKCE, one-use codes, application binding and live rev
     for (const id of [applicationId, otherApplicationId]) {
       await execute('INSERT INTO applications (id,name,description,redirect_uri) VALUES (?, ?, ?, ?)',
         [id, 'Isolated SSO test', 'Created and deleted by gated local test', redirectUri]);
+      await execute('INSERT INTO application_memberships (application_id,user_id) VALUES (?,?)', [id,userId]);
+      const roleId = randomUUID();
+      await execute('INSERT INTO application_roles (id,application_id,code,name) VALUES (?,?,?,?)', [roleId,id,'viewer','Viewer']);
+      await execute('INSERT INTO application_member_roles (application_id,user_id,role_id) VALUES (?,?,?)', [id,userId,roleId]);
     }
     for (const [id, appId, keyHash] of [[keyId, applicationId, apiKeyHash], [otherKeyId, otherApplicationId, otherKeyHash]]) {
       await execute(`INSERT INTO api_keys (id,application_id,name,prefix,key_hash,scopes,expires_at)

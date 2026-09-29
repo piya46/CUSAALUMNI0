@@ -35,6 +35,7 @@ export default function App() {
   const [returnTo] = useState(() => new URLSearchParams(window.location.search).get('returnTo'));
   const [loginContext, setLoginContext] = useState<LoginContext | null>(null);
   const [loginError, setLoginError] = useState('');
+  const accessDenied = new URLSearchParams(window.location.search).get('auth') === 'access_denied';
   const [demo, setDemo] = useState(false);
   const [page, setPage] = useState<Page>('overview');
   const [data, setData] = useState<Dataset>(emptyData);
@@ -239,7 +240,7 @@ export default function App() {
   if (returnTo !== null && !loginContext) return <LoginRequest error={loginError} onRetry={() => void checkLoginContext()} />;
   if (!identity) return <><Login context={loginContext} status={status} checking={checking} onDemo={enterDemo} onRetry={() => void checkIdentity()} />{toast && <Toast {...toast} close={() => setToast(null)} />}</>;
   if (identity.requiresMfa) return <><Mfa context={loginContext} identity={identity} onVerified={onVerified} onLogout={logout} />{toast && <Toast {...toast} close={() => setToast(null)} />}</>;
-  if (loginContext && identity.mfaMethod !== 'recovery') return <ContinueLogin identity={identity} context={loginContext} onLogout={logout} />;
+  if (loginContext && (identity.mfaMethod !== 'recovery' || accessDenied)) return <ContinueLogin denied={accessDenied} identity={identity} context={loginContext} onLogout={logout} />;
 
   let displayedData = data; let displayedMeta = meta;
   const collection = collectionMap[page];

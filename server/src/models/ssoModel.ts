@@ -42,6 +42,13 @@ export function pkceChallenge(verifier: string): string {
   return createHash('sha256').update(verifier, 'ascii').digest('base64url');
 }
 
+// Column expressions are fixed internally, never supplied by an HTTP request.
+function hasAssignedRole(application: string, user: string): string {
+  return `EXISTS (SELECT 1 FROM application_member_roles mr JOIN application_roles r
+    ON r.id=mr.role_id AND r.application_id=mr.application_id AND r.revoked_at IS NULL
+    WHERE mr.application_id=${application} AND mr.user_id=${user})`;
+}
+
 // Every token lookup rechecks current account, allowlist, application and MFA session state.
 // A deleted session/account and an expired or revoked token therefore fail immediately.
 const liveTokenSelect = `
@@ -60,7 +67,8 @@ const liveTokenSelect = `
     JOIN application_memberships m ON m.application_id=t.application_id AND m.user_id=t.user_id AND m.revoked_at IS NULL
    WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > UTC_TIMESTAMP(3)
      AND s.kind = 'full' AND s.expires_at > UTC_TIMESTAMP(3)
-     AND s.authenticated_at IS NOT NULL AND u.deleted_at IS NULL AND a.revoked_at IS NULL`;
+     AND s.authenticated_at IS NOT NULL AND u.deleted_at IS NULL AND a.revoked_at IS NULL
+     AND ${hasAssignedRole('t.application_id', 't.user_id')}`;
 
 export function createSsoModel(db: SsoDatabase = { query, execute, transaction }) {
   async function lockApiKey(apiKeyHash: string, scope: string, connection: PoolConnection): Promise<KeyRow> {
@@ -104,6 +112,7 @@ export function createSsoModel(db: SsoDatabase = { query, execute, transaction }
           WHERE a.id = ? AND BINARY a.redirect_uri = BINARY ? AND a.revoked_at IS NULL
             AND s.kind = 'full' AND s.authenticated_at IS NOT NULL
             AND s.expires_at > UTC_TIMESTAMP(3) AND u.deleted_at IS NULL
+            AND ${hasAssignedRole('a.id', 'u.id')}
           FOR UPDATE`, [input.sessionId, input.userId, input.applicationId, input.redirectUri], connection);
         if (!live) throw new SsoModelError('access_denied');
         const code = randomToken();
@@ -132,6 +141,7 @@ export function createSsoModel(db: SsoDatabase = { query, execute, transaction }
              AND c.consumed_at IS NULL AND c.expires_at > UTC_TIMESTAMP(3)
              AND s.kind = 'full' AND s.authenticated_at IS NOT NULL
              AND s.expires_at > UTC_TIMESTAMP(3) AND u.deleted_at IS NULL
+             AND ${hasAssignedRole('c.application_id', 'c.user_id')}
            FOR UPDATE`, [input.codeHash, key.applicationId], connection);
         if (!code || code.redirectUri !== input.redirectUri || key.redirectUri !== input.redirectUri
           || !/^[A-Za-z0-9._~-]{43,128}$/.test(input.verifier)

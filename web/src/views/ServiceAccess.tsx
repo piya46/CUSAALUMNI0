@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { api } from '../models/api';
-import type { Application, Dataset, PageMeta, ServiceMember, ServiceRole, User } from '../models/types';
+import type { Dataset, PageMeta, ServiceMember, ServiceRole, User } from '../models/types';
 import { Badge, Empty, Modal, Panel, SectionHeading, Spinner } from '../components/ui';
 import './service-access.css';
 
@@ -71,7 +71,7 @@ export function ServiceAccessPage({ demo, data, updateDemo }: Shared & { data: D
   }, [selectedApp?.id, demo, data.serviceRoles, data.serviceMembers, search, page, version]);
   return <><SectionHeading eyebrow="SERVICE ACCESS" title="สิทธิ์แต่ละ Service" description="กำหนดหน่วยงานและ Role ของผู้ใช้แยกตามระบบที่เชื่อมต่อ" />
     <div className="info-strip"><Users size={19} /><span>ผู้ใช้หนึ่งคนมีหลาย Role ได้ แต่ละ Service เห็นเฉพาะสิทธิ์ของตัวเอง Role ที่สร้างที่นี่ไม่ให้สิทธิ์ Admin ของ CUSA SSO</span></div>
-    <Panel className="service-picker-panel"><EntityPicker kind="applications" demo={demo} data={data.applications} value={selectedApp} onChange={app => { setApp(app); setPage(1); setSearch(''); setDialog(null); setNotice(''); }} /></Panel>
+    <Panel className="service-picker-panel"><EntityPicker kind="applications" demo={demo} data={data.applications} value={selectedApp} onChange={app => { setApp(app); setRoles([]); setMembers([]); setPage(1); setSearch(''); setDialog(null); setNotice(''); }} /></Panel>
     {notice && <p className="service-notice" role="status">{notice}</p>}{error && <p className="inline-error" role="alert">{error}</p>}
     {!selectedApp ? <Panel><Empty title="เลือก Service เพื่อจัดการสิทธิ์" detail="เพิ่มระบบได้จากเมนูแอปพลิเคชัน แล้วสร้าง Role และเพิ่มสมาชิก" /></Panel> : <>
       <Panel title={`Role ของ ${selectedApp.name}`} subtitle="รหัส Role ใช้ตรวจสอบสิทธิ์ในระบบปลายทาง และเปลี่ยนไม่ได้หลังสร้าง" action={<button className="button secondary" disabled={loading || Boolean(error)} onClick={() => setDialog({ kind: 'role' })}><Plus size={15} />เพิ่ม Role</button>}>

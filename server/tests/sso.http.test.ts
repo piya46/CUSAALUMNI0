@@ -26,7 +26,7 @@ function makeApp(overrides: Partial<SsoModel> = {}, actor?: Identity) {
     issueAuthorizationCode: async () => code,
     exchangeAuthorizationCode: async () => ({ accessToken: 'new-access-token', expiresIn: 300 }),
     introspectToken: async () => ({ active: false }),
-    getUserInfo: async () => ({ sub: 'user-1', email: identity.email, name: identity.name,
+    getUserInfo: async () => ({ given_name: 'Person', family_name: '', department: 'IT', roles: ['viewer'], aud: appId, sub: 'user-1', email: identity.email, name: identity.name,
       email_verified: true, applicationOrigin: 'https://portal.example.com' }),
     ...overrides,
   };
@@ -196,4 +196,30 @@ test('userinfo actual CORS origin must match the token application, even for ano
   const introspect = await request(app).post('/api/sso/introspect').set('X-API-Key', apiKey)
     .set('Origin', 'https://portal.example.com').send({ token: code });
   assert.equal(introspect.headers['access-control-allow-origin'], undefined);
+});
+
+test('login context shows registered branding only, validates PKCE/callback and does not issue credentials', async () => {
+  let issued = false;
+  const app = makeApp({ issueAuthorizationCode: async () => { issued = true; return code; } });
+  const response = await request(app).get('/api/sso/login-context').query(authorizeParams({ name: 'Spoofed service' }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.application, { name: 'People Portal', origin: 'https://portal.example.com' });
+  assert.equal(new URL(response.body.returnTo, 'https://sso.example.com').pathname, '/api/sso/authorize');
+  assert.equal(response.body.returnTo.includes('Spoofed'), false);
+  assert.equal(response.headers['cache-control'], 'no-store');
+  assert.equal(issued, false);
+  for (const input of [{ redirect_uri: 'https://attacker.example/callback' }, { code_challenge_method: 'plain' }, { state: 'short' }]) {
+    const denied = await request(app).get('/api/sso/login-context').query(authorizeParams(input));
+    assert.equal(denied.status, 400); assert.equal(denied.body.application, undefined);
+  }
+  assert.equal((await request(makeApp({ getApplication: async () => null })).get('/api/sso/login-context').query(authorizeParams())).status, 400);
+});
+
+test('missing service membership returns to central login with a safe denial state', async () => {
+  const response = await request(makeApp({ issueAuthorizationCode: async () => { throw new SsoModelError('access_denied'); } }, identity))
+    .get('/api/sso/authorize').query(authorizeParams());
+  assert.equal(response.status, 303);
+  const location = new URL(response.headers.location, 'https://identity.example.com');
+  assert.equal(location.pathname, '/login'); assert.equal(location.searchParams.get('auth'), 'access_denied');
+  assert.equal(location.searchParams.has('code'), false);
 });

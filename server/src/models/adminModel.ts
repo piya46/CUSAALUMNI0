@@ -68,7 +68,7 @@ async function revokeUser(userId: string, connection: PoolConnection) {
 }
 
 export async function listUsers(options: Pagination) {
-  const result = await paginated<{ id: string; email: string; name: string; avatar: string | null; role: Role; totpEnabled: number; lastLoginAt: Date | null; createdAt: Date }>(
+  const result = await paginated<{ id: string; email: string; name: string; firstName: string; lastName: string; avatar: string | null; role: Role; totpEnabled: number; lastLoginAt: Date | null; createdAt: Date }>(
     `u.id, u.email, COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.name) AS name,
       u.first_name AS firstName, u.last_name AS lastName, u.avatar, a.role, (u.totp_secret IS NOT NULL) AS totpEnabled,
       u.last_login_at AS lastLoginAt, u.created_at AS createdAt`,

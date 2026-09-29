@@ -92,8 +92,16 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
         res.redirect(303, `/login?${new URLSearchParams({ returnTo })}`);
         return;
       }
-      const code = await model.issueAuthorizationCode({ applicationId, redirectUri, challenge,
-        sessionId: req.identity.sessionId, userId: req.identity.userId },(conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn));
+      let code: string;
+      try {
+        code = await model.issueAuthorizationCode({ applicationId, redirectUri, challenge,
+          sessionId: req.identity.sessionId, userId: req.identity.userId },(conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn));
+      } catch (error) {
+        if (!(error instanceof SsoModelError) || error.code !== 'access_denied') throw error;
+        await recordAudit(req, 'sso.authorization.failure', applicationId, { failure_reason: 'access_denied' });
+        res.redirect(303, `/login?${new URLSearchParams({ returnTo, auth: 'access_denied' })}`);
+        return;
+      }
       destination.searchParams.set('code', code);
       destination.searchParams.set('state', state);
       res.redirect(303, destination.toString());

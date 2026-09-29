@@ -1,4 +1,4 @@
-# เชื่อมต่อระบบอื่นกับ CUSA Identity
+# เชื่อมต่อระบบอื่นกับ CUSA SSO
 
 API นี้เป็น SSO สำหรับระบบภายในที่ผู้ดูแลอนุมัติ ใช้ authorization code + PKCE S256, Google Login และ MFA ของ CUSA ก่อนออก token เป็น **custom first-party SSO API** ไม่ใช่ OpenID Connect provider แบบสมบูรณ์: ไม่มี discovery, ID token, refresh token, dynamic client registration หรือหน้าขอ consent สำหรับบุคคลที่สาม
 
@@ -7,7 +7,8 @@ API นี้เป็น SSO สำหรับระบบภายในท�
 1. เพิ่ม application ในหน้า Applications พร้อม callback URL แบบเต็ม เช่น `https://portal.example.com/auth/callback` ใช้ HTTPS; HTTP อนุญาตเฉพาะ loopback สำหรับพัฒนา
 2. สร้าง API key ผูกกับ application นั้น ให้สิทธิ์ `identity:read` สำหรับแลก code และ `token:introspect` สำหรับตรวจสถานะ เก็บ key ใน secret manager/ตัวแปร environment ของ backend
 3. ตั้ง `SSO_ORIGIN`, `SSO_APPLICATION_ID`, `SSO_API_KEY`, `SSO_REDIRECT_URI` และ `PORTAL_ORIGIN` ใน backend ของระบบปลายทาง
-4. เปิด backend session storage ที่ใช้ร่วมกันได้ เช่น Redis/MariaDB พร้อม cookie `HttpOnly; Secure; SameSite=Lax` และป้องกัน CSRF ที่ระบบปลายทาง
+4. สร้าง Role และเพิ่มผู้ใช้เป็นสมาชิกของ Service นี้จากหน้า “สิทธิ์แต่ละ Service” แล้วกำหนดหน่วยงานและ Role ตาม [คู่มือ](SERVICE-ACCESS.md) บัญชีที่อยู่ใน allowlist อย่างเดียวยังเข้า Service ไม่ได้
+5. เปิด backend session storage ที่ใช้ร่วมกันได้ เช่น Redis/MariaDB พร้อม cookie `HttpOnly; Secure; SameSite=Lax` และป้องกัน CSRF ที่ระบบปลายทาง
 
 **ห้ามวาง API key ใน React, localStorage, sessionStorage, URL หรือ repository** Browser สร้าง PKCE และรับ authorization code; backend เป็นผู้แลก code ด้วย API key และเก็บ access token
 
@@ -15,17 +16,18 @@ API นี้เป็น SSO สำหรับระบบภายในท�
 
 | Endpoint | การยืนยันตัวตน | ผลลัพธ์ |
 | --- | --- | --- |
+| `GET /api/sso/login-context` | ไม่ต้องมี session; ตรวจ authorization parameters เดียวกับ authorize | ชื่อ/Origin ของแอปที่ลงทะเบียนและ internal returnTo สำหรับหน้า Login |
 | `GET /api/sso/authorize` | CUSA session ที่ผ่าน MFA | Redirect ไป callback พร้อม `code` และ `state` |
 | `POST /api/sso/token` | `X-API-Key`, scope `identity:read` | Opaque bearer token อายุสูงสุด 300 วินาที |
 | `POST /api/sso/introspect` | `X-API-Key`, scope `token:introspect` | `{active:false}` หรือข้อมูลผู้ใช้และ `aud` ของ application |
-| `GET /api/sso/userinfo` | `Authorization: Bearer ACCESS_TOKEN` | `{sub,email,name,email_verified:true}` |
+| `GET /api/sso/userinfo` | `Authorization: Bearer ACCESS_TOKEN` | `{sub,email,name,given_name,family_name,department,roles,aud,email_verified:true}` |
 | `OPTIONS /api/sso/userinfo` | Origin ของ application ที่ยังใช้งาน | CORS preflight สำหรับ GET และ Authorization เท่านั้น |
 
 Authorization code มีอายุ 90 วินาที ใช้ได้ครั้งเดียว และผูกกับ application, callback, PKCE และ CUSA session เดิม `state` ต้องเป็น base64url 32–128 ตัวอักษร สร้างด้วย CSPRNG อย่างน้อย 32 bytes; verifier ยาว 43–128 ตัวอักษรตาม PKCE และ challenge ต้องเป็น SHA-256 base64url แบบไม่มี padding
 
-Callback ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร ไม่มี wildcard เมื่อ callback หรือ request ไม่ถูกต้อง API จะตอบ JSON error โดยไม่ redirect ผู้ใช้ที่ยังไม่ login/ยังไม่ผ่าน MFA จะไปหน้า CUSA พร้อม internal `returnTo` ที่ผ่านการตรวจแล้ว
+Callback ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร ไม่มี wildcard เมื่อ callback หรือ request ไม่ถูกต้อง API จะตอบ JSON error โดยไม่ redirect ผู้ใช้ที่ยังไม่ login/ยังไม่ผ่าน MFA จะไปหน้า `/login` ของ CUSA SSO พร้อม internal `returnTo` ที่ผ่านการตรวจแล้ว
 
-Token เป็นค่า opaque จาก `crypto.randomBytes(32)` (256-bit CSPRNG) แล้ว encode base64url เป็น 43 ตัวอักษร ฐานข้อมูลเก็บเฉพาะ HMAC-SHA-256 digest ที่ใช้ secret นอกฐานข้อมูล ต้องเรียก introspection เพื่อดูสถานะ Query ตรวจ session ที่ผ่าน MFA, อายุ session/token, allowlist, สถานะ soft delete และ application API key แต่ละชุดตรวจได้เฉพาะ token ของ application ตัวเอง การ revoke API key หยุดการแลก code/ตรวจ token ด้วย key นั้น; token ที่ออกไปแล้วจะหมดอายุภายใน 5 นาทีหรือถูกยกเลิกผ่าน session/application
+Token เป็นค่า opaque จาก `crypto.randomBytes(32)` (256-bit CSPRNG) แล้ว encode base64url เป็น 43 ตัวอักษร ฐานข้อมูลเก็บเฉพาะ HMAC-SHA-256 digest ที่ใช้ secret นอกฐานข้อมูล ต้องเรียก introspection เพื่อดูสถานะ Query ตรวจ session ที่ผ่าน MFA, อายุ session/token, allowlist, สถานะ soft delete, สมาชิก/Role ใน Service และ application API key แต่ละชุดตรวจได้เฉพาะ token ของ application ตัวเอง การ revoke API key หยุดการแลก code/ตรวจ token ด้วย key นั้น; token ที่ออกไปแล้วจะหมดอายุภายใน 5 นาทีหรือถูกยกเลิกผ่าน session/application
 
 Introspection มี LRU cache 10,000 entries และรวมคำขอพร้อมกันของ `(apiKeyHash,tokenHash)` เดียวกัน TTL สูงสุด 5 วินาที โดยไม่เกินเวลา expiry ที่เร็วที่สุดของ token, session และ API key (`exp` ใน response เป็น effective expiry นี้) การถอนสิทธิ์จึงอาจช้าสูงสุด 5 วินาที ตั้ง `INTROSPECTION_CACHE_SECONDS=0` เมื่อต้องตรวจทุกครั้ง ส่วน userinfo ไม่มี cache และตรวจสถานะปัจจุบันทุกคำขอ ไม่ cache ผลล้มเหลว/ไม่มีสิทธิ์ ข้อมูลและ token ไม่ถูกส่งผ่าน browser cache
 
@@ -54,8 +56,31 @@ X-API-Key: <server-side secret>
 ```
 
 ```json
-{"active":true,"sub":"<user UUID>","email":"person@example.com","name":"Person","exp":2000000000,"aud":"<application UUID>","scope":"identity:read"}
+{"active":true,"sub":"<user UUID>","email":"person@example.com","name":"Person","given_name":"Person","family_name":"","department":"Finance","roles":["viewer"],"exp":2000000000,"aud":"<application UUID>","scope":"identity:read"}
 ```
+
+## หน้าเข้าสู่ระบบกลาง
+
+ให้ Service เริ่มที่ `/api/sso/authorize` เสมอพร้อม state และ PKCE; หน้า `/login` เป็น View ภายใน flow และไม่ใช่ URL ที่ใช้แทน authorize ตรง ๆ หน้า Login อ่านชื่อแอป/Origin จาก `/api/sso/login-context` ซึ่งตรวจ callback และพารามิเตอร์ทั้งหมดจากฐานข้อมูล ไม่รับชื่อหรือ URL ปลายทางจาก query ที่ไม่ได้ตรวจสอบ Context ไม่ออก code/token และปุ่ม Google เก็บเฉพาะ internal returnTo เดิม หลัง MFA ย้อนกลับไป authorize เพื่อตรวจสิทธิ์ล่าสุดก่อนออก code
+
+## ตรวจ Role ของ Service
+
+`roles` เป็นรหัสที่ Admin กำหนดแยกในแต่ละ Service; `department` เป็นหน่วยงานใน Service นี้ ตรวจ Role ฝั่ง backend หลัง introspection และผูกกับ business permissions ของระบบปลายทางเอง เช่น:
+
+```js
+function requireRole(role) {
+  return (req, res, next) => {
+    if (!Array.isArray(req.identity?.roles) || !req.identity.roles.includes(role)) return res.sendStatus(403);
+    next();
+  };
+}
+// Place after requireIdentity; use the application's CSRF middleware for mutations.
+app.get('/api/approval-queue', requireIdentity, requireRole('approver'), (req, res) => {
+  res.json({ userId: req.identity.sub });
+});
+```
+
+เปลี่ยน membership/Role จะยกเลิก token เดิมเฉพาะ Service นี้ ให้เริ่ม authorization ใหม่เพื่อรับสิทธิ์ล่าสุด; cache delay ตามที่ระบุข้างต้น ไม่ได้รับสิทธิ์ CUSA Admin จาก Role ของ Service
 
 ## ตัวอย่าง backend ของระบบปลายทาง
 
