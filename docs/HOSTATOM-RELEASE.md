@@ -71,3 +71,15 @@ Purge สำเร็จจะแสดง `mfa.evidence.purge.completed` พร
 Compose รุ่นนี้ mount named volume `mfa_evidence` ที่ `/app/var/mfa-evidence` และกำหนดสิทธิ์ให้ Node ใน image มีฟอนต์สำหรับลายน้ำ Latin ใช้ volume เดิมข้ามการสร้าง container ใหม่ และยกเว้น volume นี้จาก backup/snapshot เพราะมีหลักฐานกับ wrapped keys ห้ามใช้ `docker compose down -v` ระหว่างมีคำขอค้าง
 
 Volume ช่วยให้ข้อมูลอยู่ต่อหลังเปลี่ยน container แต่ไม่ใช่ระบบสำรองข้อมูล และ local Docker volume ไม่ได้แชร์ข้ามหลาย Host โดยอัตโนมัติ ต้องทดสอบสิทธิ์เขียน/อ่าน/ลบด้วยภาพจำลองบน Docker จริงก่อนใช้งาน ตาม [Docker volumes](https://docs.docker.com/engine/storage/volumes/)
+
+## ส่วนขยาย Passkeys / LINE / Firebase
+
+รุ่นนี้เพิ่ม migration `006_additional_factors.sql` (รวมทั้งหมด 6 migrations) ต้องรันก่อนเปิด Node รุ่นใหม่แม้ยังปิด LINE/Firebase อยู่ อ่าน [คู่มือตั้งค่าทีละช่อง](ADDITIONAL-FACTORS.md) ค่าที่เพิ่มใน `.env.example` ยังไม่แทน credentials ของ Host ให้คงค่าเดิมและเติมเฉพาะช่องใหม่
+
+Passkeys เปิดได้โดย `PASSKEY_ENABLED=true`; LINE/Firebase คง false จนใส่ค่าครบและทดสอบจริง Browser SDK Firebase โหลดเมื่อผู้ใช้ขอยืนยันเบอร์ ไม่เก็บ Firebase token ใน localStorage
+
+`npm run deploy:check` ตรวจไฟล์/config ในเครื่องนั้นเท่านั้น ส่วน `npm run ops:check` ตรวจ schema 006/สิทธิ์อ่านตารางใหม่และ audit health ผ่านฐานข้อมูลจริง หาก runtime เป็นบัญชี Plesk ที่มี ALL PRIVILEGES เดิม ยังต้องให้ Host ปรับตาม runtime-grants; การติดตั้ง migration ไม่จำกัดสิทธิ์ให้อัตโนมัติ
+
+เลือก `DB_SOCKET_PATH` เฉพาะเมื่อ HostAtom แจ้ง path ที่ Node เข้าถึงได้ ไม่เดา path ของเครื่องพัฒนา และไม่เปลี่ยนจาก localhost TCP เพียงเพราะคาดว่าจะเร็วขึ้น ทั้งสองแบบยังใช้ pool/UTC เหมือนกัน
+
+เปิด Monitoring เพิ่มได้ด้วย `METRICS_TOKEN`; ดู [Delta Review](DELTA-REVIEW.md) ค่า metrics เป็นราย process ไม่ใช่ค่ารวม Host/Passenger

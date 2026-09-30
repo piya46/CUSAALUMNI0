@@ -1,4 +1,5 @@
 import { lineWebhook } from './controllers/factorController.js';
+import { metrics } from './controllers/metricsController.js';
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -28,9 +29,10 @@ export function createApp() {
   app.use('/api',(_req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Pragma','no-cache');next();});
   const coarseLimit=(limit:number)=>localRateLimit({windowMs:60_000,limit,standardHeaders:'draft-8',legacyHeaders:false,
     handler:(req,res)=>{securityFailure(req,'LOCAL_RATE_LIMIT');res.status(429).json({error:'คำขอมากเกินไป กรุณารอสักครู่',code:'RATE_LIMITED',requestId:req.context?.requestId});}});
-  const browserLimit=coarseLimit(180), machineLimit=coarseLimit(12000);
+  const browserLimit=coarseLimit(180), machineLimit=coarseLimit(12000), webhookLimit=coarseLimit(600);
   app.use('/api',(req,res,next)=>{
     if(['/health','/ready'].includes(req.path)) return next();
+    if(req.path==='/auth/line/webhook')return webhookLimit(req,res,next);
     return ['/sso/token','/sso/introspect'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
   });
   app.post('/api/auth/line/webhook',requireConfigured,auditAvailability,express.raw({type:'application/json',limit:'64kb'}),lineWebhook);
@@ -38,6 +40,7 @@ export function createApp() {
   app.use(express.urlencoded({extended:false,limit:'16kb'}));
   app.use(cookieParser());
   app.get('/api/health',(_req,res)=>res.json({status:'ok',configured:config.configured}));
+  app.get('/api/metrics',metrics);
   app.get('/api/ready',async(_req,res)=>{
     if(!config.configured || config.installEnabled)return res.status(503).json({ready:false});
     try {

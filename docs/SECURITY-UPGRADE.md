@@ -5,7 +5,7 @@
 1. สำรอง DB และ secrets ที่ใช้ถอดรหัสไว้คนละพื้นที่ที่จำกัดสิทธิ์ เปิด maintenance ที่ reverse proxy ระหว่าง migration
 2. อัปโหลด source, lockfile และ **server/migrations/** ครบ ห้ามแก้ไฟล์ migration 001–003 ที่เคยรันแล้ว
 3. รัน `npm ci --include=dev` และ `npm run build`
-4. ใช้บัญชี migration ที่มี ALTER/INDEX รัน **`npm run db:migrate`** จาก Application Root จะเพิ่ม migration `004_security_hardening.sql` และ `005_mfa_reset_evidence.sql` แบบ additive ไม่ลบ user/audit เดิม ไม่ต้องเปิด `/install` ซ้ำ
+4. ใช้บัญชี migration ที่มี ALTER/INDEX รัน **`npm run db:migrate`** จาก Application Root จะเพิ่ม migration `004_security_hardening.sql`, `005_mfa_reset_evidence.sql` และ `006_additional_factors.sql` แบบ additive ไม่ลบ user/audit เดิม ไม่ต้องเปิด `/install` ซ้ำ
 5. เปลี่ยนกลับมาใช้ DB runtime account ที่จำกัดสิทธิ์ตาม `server/sql/runtime-grants.sql` และตั้ง `NODE_ENV=production`, HTTPS APP_ORIGIN, `INSTALL_ENABLED=false`, ล้าง `INSTALL_TOKEN`
 6. Restart App แล้วตรวจ `/api/ready` ได้ 200 ผู้ดูแลที่ยังไม่มี TOTP ต้องเปิด Authenticator และเก็บ Recovery codes ก่อนเข้าเมนู Admin
 7. ทดสอบ Google → Email OTP → Ref → resend → logout, TOTP/recovery, การเชื่อมต่อ Service, revoke และ Audit ด้วยบัญชี staging ก่อนเปิดผู้ใช้ทั้งหมด
@@ -13,7 +13,7 @@
 
 Plesk: Application Root คือโฟลเดนที่มี package.json, Document Root เป็นโฟลเดอร์ `public` ใต้ Application Root, Startup `app.cjs` ใช้ Node LTS ที่รองรับตามคู่มือ PLESK.md `.env` ต้องอยู่นอก Document Root และไม่อยู่ใน Git
 
-Migration ต้องรันก่อนเริ่มโค้ดใหม่ หากต้องย้อนกลับ โค้ดเก่าอ่าน schema ที่เพิ่มคอลัมน์ได้ แต่ต้องคง migration 004–005 และ checksum ไว้ ห้ามลบคอลัมน์/ลบ journal เพื่อแก้ checksum ระหว่าง rollback
+Migration ต้องรันก่อนเริ่มโค้ดใหม่ หากต้องย้อนกลับ โค้ดเก่าอ่าน schema ที่เพิ่มคอลัมน์ได้ แต่ต้องคง migration 004–006 และ checksum ไว้ ห้ามลบคอลัมน์/ลบ journal เพื่อแก้ checksum ระหว่าง rollback
 
 ## นโยบาย OTP / Admin
 
@@ -59,3 +59,7 @@ Migration ต้องรันก่อนเริ่มโค้ดใหม�
 งานเสริมจาก Audit ที่แยกเป็นเฟสถัดไป: idle session policy, WebAuthn, keyring สำหรับหมุน AES keys, remote immutable archive/KMS signing และ retention ตามนโยบายองค์กร ปัจจุบันยังใช้ absolute session expiry/concurrent limit และ AES-GCM key เดียว ห้ามเปลี่ยน ENCRYPTION_KEY ทับโดยไม่มีแผน re-encrypt และเก็บกุญแจเก่าเพื่อ restore
 
 MFA reset ใช้ master key แยกพร้อมกุญแจสุ่มรายเอกสาร แต่ยังไม่มีเครื่องมือหมุน master key ระหว่างมีเอกสารค้าง ห้ามเปลี่ยน `MFA_EVIDENCE_KEY` ทับ หลักฐานมีข้อมูลส่วนบุคคลที่ละเอียดอ่อนต่อความเสี่ยง ให้ผู้รับผิดชอบข้อมูลตรวจนโยบาย การปิดข้อมูลในภาพ และการสำรองก่อนเปิดใช้งาน
+
+## Migration 006 และการเพิ่มช่องทางยืนยัน
+
+ให้รัน 006 ก่อนเปิดโค้ดใหม่ เพิ่ม runtime SELECT/INSERT/UPDATE/DELETE เฉพาะ passkeys, line_identities, phone_identities, factor_challenges และคง audit_logs append-only ตามเดิม ตั้งค่า provider ตาม [ADDITIONAL-FACTORS.md](ADDITIONAL-FACTORS.md); ทดสอบบน staging HTTPS ก่อนเปิด flags ใน production การย้อนโค้ดไม่ควรลบ migration history หรือลบ factor bindings ที่ผู้ใช้สร้างแล้วโดยไม่มีแผนกู้คืน

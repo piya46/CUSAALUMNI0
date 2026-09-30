@@ -5,6 +5,9 @@ import { config } from '../config.js';
 // Read-only diagnostic. Never emit raw SHOW GRANTS (it may contain auth hashes).
 try {
   const queue=await getAuditQueueHealth();
+  // Verify migration 006 and runtime SELECT access without fetching identities.
+  await query('SELECT phone_required FROM users LIMIT 0');
+  for(const table of ['passkeys','line_identities','phone_identities','factor_challenges'])await query(`SELECT 1 FROM ${table} LIMIT 0`);
   const [server]=await query<{zone:string;role:string}>('SELECT @@session.time_zone AS zone,CURRENT_ROLE() AS role');
   const grants=await query<Record<string,string>>('SHOW GRANTS FOR CURRENT_USER');
   const protectedTables=['audit_logs','installation_state','schema_migrations'];

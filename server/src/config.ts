@@ -42,6 +42,7 @@ const schema = z.object({
     return !extra.length && family>0 && (bits===undefined || (/^\d{1,3}$/.test(bits) && Number(bits)>0 && Number(bits)<=(family===4?32:128)));
   })),
   REDIS_URL: z.string().default(''),
+  METRICS_TOKEN:z.string().default('').refine(value=>!value||/^[A-Za-z0-9_-]{43}$/.test(value),'METRICS_TOKEN must be a random 32-byte base64url token'),
   INSTALL_ENABLED: z.enum(['true', 'false']).default('false'),
   INSTALL_TOKEN: z.string().default(''),
   BOOTSTRAP_ADMIN_EMAIL: z.string().trim().toLowerCase().default(''),
@@ -85,6 +86,7 @@ export const config = {
   trustProxy: env.TRUST_PROXY === '1' ? 1 : env.TRUST_PROXY === 'false' ? false : env.TRUST_PROXY.split(',').map(s=>s.trim()),
   secureCookies: origin.protocol === 'https:',
   redisUrl: env.REDIS_URL,
+  metricsToken:env.METRICS_TOKEN,
   installEnabled: env.INSTALL_ENABLED === 'true', installToken: env.INSTALL_TOKEN, bootstrapAdminEmail: env.BOOTSTRAP_ADMIN_EMAIL,
   dbConnectionLimit:env.DB_CONNECTION_LIMIT,dbQueueLimit:env.DB_QUEUE_LIMIT,introspectionCacheSeconds:env.INTROSPECTION_CACHE_SECONDS,
 };

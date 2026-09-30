@@ -49,7 +49,7 @@ export async function lineWebhook(req:Request,res:Response){
   }
   res.json({ok:true});
 }
-export async function phoneStart(req:Request,res:Response){const b=z.object({phone:z.string().regex(/^\+[1-9]\d{7,14}$/)}).strict().parse(req.body);res.json(await cooldown(res,()=>phone.startPhoneVerification(req.identity!.sessionId,b.phone,record(req))));}
+export async function phoneStart(req:Request,res:Response){const b=z.object({phone:z.string().regex(/^\+[1-9]\d{7,14}$/),acknowledged:z.literal(true),noticeVersion:z.literal('1.2')}).strict().parse(req.body);res.json(await cooldown(res,()=>phone.startPhoneVerification(req.identity!.sessionId,b.phone,record(req))));}
 export async function phoneVerify(req:Request,res:Response){
   const b=z.object({challengeId:id,idToken:z.string().min(100).max(10000)}).strict().parse(req.body);
   const proof=await verifyFirebasePhoneToken(b.idToken);

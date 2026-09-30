@@ -76,3 +76,11 @@ These definitions extend the base schema/DTO outline above. [001_initial.sql](..
 - Evidence lifetime: 7 days from approval/rejection; pending max30 days; durable upload intents allow cleanup after crashes. Scheduled purge plus in-process job destroys key then ciphertext and records purged_at/audit. Seven days is organizational policy, not a blanket statutory requirement. Exclude files and wrapped keys from backups/snapshots; see [MFA reset operating contract](MFA-RESET.md).
 - MFA reset list is keyset-paginated at 50 rows; metadata nextCursor/hasMore. Evidence never appears in JSON/audit logs, public URLs, static assets or service claims. Public privacy notice v1.1 describes purpose, minimization, recipients and retention.
 - [OpenAPI 3.1](../web/public/openapi.json) documents the SSO integration endpoints only. Admin/auth/MFA endpoints are documented in this contract and MFA runbook; no claim that the OpenAPI file covers the full administrative API.
+
+## Delta 2026-09-30: additional factors and single-host operations
+
+Migration 006 adds passkeys, LINE bindings, verified phone bindings and one-use encrypted challenges. See [additional-factor contract and provider setup](ADDITIONAL-FACTORS.md) and [explicit Blueprint decisions](DELTA-REVIEW.md). Existing Google/allowlist/service-role/BFF/opaque-token contracts remain in force. Passkey and LINE login produce `mfaMethod=passkey|line`; administrative access still requires fresh TOTP. Phone ownership proof is not an authentication-session promotion.
+
+User account creation snapshots `FIREBASE_PHONE_REQUIRED` into `users.phone_required`; existing users are not silently enrolled in that requirement. Session authorization and all three SSO credential stages reject required-but-unverified phone status. No public auto-registration, JWT/OIDC provider, MFA bypass code or logout webhook is advertised as implemented.
+
+Admin `DELETE /api/admin/users/:id/sessions` revokes credentials atomically with audit and retains the account/membership/MFA. Optional authenticated Prometheus `/api/metrics` reports per-process aggregates only. Static immutable caching is restricted to content-hashed Vite assets. `DB_SOCKET_PATH` selects an explicit Unix socket with no TCP fallback.

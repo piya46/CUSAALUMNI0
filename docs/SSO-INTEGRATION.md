@@ -407,3 +407,9 @@ curl "$SSO_ORIGIN/api/sso/userinfo" \
 ใช้ HTTP status + code ในโปรแกรม ไม่จับข้อความ error ที่อาจแปลภาษาได้ requestId มีใน HTTP error ส่วนใหญ่และ X-Request-ID ใช้ติดตาม Audit ได้ อย่าส่ง API key/token มาทาง support
 
 ตรวจ Role จาก `identity.roles` ฝั่ง backend เช่น `approver` ไม่ใช้ platform role แทน Service role และไม่พึ่งการซ่อนปุ่มใน React ตรวจ `active === true`, `aud === SSO_APPLICATION_ID` และ `exp > now` ทุก protected operation ไม่มี JWT ให้ถอดบน browser
+
+## Additional authentication methods (migration 006)
+
+CUSA SSO can complete its second authentication step using a previously enrolled Passkey or LINE Number Matching in addition to TOTP/Recovery. Firebase verifies phone ownership for configured new accounts; it does not replace MFA. Your BFF continues the same authorization-code + PKCE + opaque-token flow and receives only the roles/department of its own Service. Do not trust a browser query parameter such as `method=line` or a Firebase/LINE token as a CUSA access token.
+
+A required phone check is enforced before authorization code issuance, token exchange and live introspection. Per-process introspection TTL still bounds stale revocation to the configured maximum; use 0 when you require a live decision on every operation. See [provider setup](ADDITIONAL-FACTORS.md). This release does not implement OIDC discovery/ID tokens, public registration or a signed backchannel logout protocol; integrations must not infer those features from the new MFA methods.

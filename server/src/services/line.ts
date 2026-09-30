@@ -20,7 +20,7 @@ export async function exchangeLine(code:string,nonce:string,verifier:string){
 }
 export async function sendLineMatching(subject:string,id:string,choices:{label:string;value:string}[]){
   const response=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:{Authorization:`Bearer ${config.lineChannelAccessToken}`,'Content-Type':'application/json','X-Line-Retry-Key':id},
-    body:JSON.stringify({to:subject,messages:[{type:'template',altText:'CUSA SSO: คำขอยืนยันการเข้าสู่ระบบ เลือกเลขให้ตรงกับหน้าจอที่คุณกำลังใช้งาน',template:{type:'buttons',title:'CUSA SSO · ยืนยันเข้าสู่ระบบ',text:'เลือกเลขที่เห็นบนหน้า CUSA SSO ของคุณเท่านั้น หากไม่ได้เริ่มเข้าสู่ระบบ ให้กดปฏิเสธ (หมดอายุ 3 นาที)',actions:choices.map(choice=>({type:'postback',label:choice.label,data:`cusa_mfa=${id}&choice=${choice.value}`}))}}]})});
+    body:JSON.stringify({to:subject,messages:[{type:'template',altText:'CUSA SSO: ยืนยันเข้าสู่ระบบ เลือกเลขให้ตรงกับหน้าจอของคุณ หมดอายุใน 3 นาที',template:{type:'buttons',title:'CUSA SSO · ยืนยันเข้าสู่ระบบ',text:'เลือกเลขจากหน้าจอ CUSA SSO ถ้าไม่ได้เริ่ม ให้ปฏิเสธ',actions:choices.map(choice=>({type:'postback',label:choice.label,data:`cusa_mfa=${id}&choice=${choice.value}`}))}}]})});
   if(!response.ok)throw new Error('LINE_DELIVERY_UNAVAILABLE');
 }
 export function validLineSignature(raw:Buffer,signature:string|undefined){

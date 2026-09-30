@@ -150,3 +150,9 @@ HMAC-SHA-256 สำหรับ token/API key ที่สุ่ม entropy ส�
 เพิ่ม OTP 6 ช่อง/Ref/cooldown 60 วินาที, email CUSA SSO พร้อมวัตถุประสงค์, public homepage/branding assets, API reference/OpenAPI/BFF และกระบวนการขอรีเซ็ต MFA พร้อม encrypted evidence ตาม [คู่มืออัปเกรด](SECURITY-UPGRADE.md) และ [คู่มือ MFA](MFA-RESET.md)
 
 ดู [บันทึกทดสอบ](VALIDATION.md) สำหรับจำนวนและขอบเขตจริง การทดสอบในเครื่องไม่แทนการตรวจ penetration/load, ประเมินฐานกฎหมายของเอกสาร, Google branding approval, backup exclusions หรือการตรวจ host/proxy/DB grants จริง งาน WebAuthn, key rotation tooling, idle session, external immutable archive ยังคงเป็นงานเพิ่มเติมตามลำดับความเสี่ยง ไม่ใช่ฟีเจอร์ที่รอบนี้ได้ติดตั้งแล้ว
+
+## ส่วนขยายหลังการแก้ไขชุดแรก
+
+WebAuthn/Passkeys ที่กล่าวว่ายังเป็นงานเพิ่มเติมในบันทึกก่อนหน้า ได้เพิ่มเป็น MFA หลัง Google แล้วใน migration 006 พร้อม LINE Number Matching, Firebase ยืนยันเบอร์ครั้งแรก, Admin revoke sessions, private metrics และ deployment checks ดู [ผลทบทวน Blueprint](DELTA-REVIEW.md) ซึ่งแยกสิ่งที่ทำจริงจาก JWT/OIDC/SLO/public-registration/Secret Manager/off-site backup ที่ยังไม่เปิดใช้งาน ผลการตรวจล่าสุดอยู่ที่ [VALIDATION.md](VALIDATION.md)
+
+พบ dependency uuid ทางอ้อมและเปลี่ยนเป็นรุ่นแก้ไข 11.1.1 ผ่าน override เฉพาะ gaxios 6; ตรวจ runtime advisory ซ้ำแล้วไม่พบรายการที่รายงาน การตรวจนี้ไม่แทน penetration test และยังต้องทดสอบ provider จริง/สิทธิ์ runtime/ข้อจำกัดของ HostAtom

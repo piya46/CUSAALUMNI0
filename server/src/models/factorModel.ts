@@ -13,7 +13,8 @@ export async function lockFactorSession(sessionId:string, connection:PoolConnect
   if(row.locked)throw new HttpError(429,'บัญชีถูกพักการยืนยัน 15 นาที','ACCOUNT_LOCKED');
   if(mode==='pending' && (row.kind!=='pending'||!row.totp_secret))throw new HttpError(403,'วิธีนี้ยังไม่พร้อมใช้งาน','MFA_REQUIRED');
   if(mode==='manage' && (row.kind!=='full'||!row.totp_secret))throw new HttpError(403,'เปิด Authenticator และเก็บ Recovery codes ก่อนเพิ่มวิธีสำรอง','TOTP_ENROLLMENT_REQUIRED');
-  if(mode==='manage' && (row.mfa_method!=='totp'||Date.now()-new Date(row.authenticated_at).getTime()>300000))throw new HttpError(403,'ยืนยัน Authenticator ก่อนจัดการวิธียืนยันตัวตน','MFA_REAUTH_REQUIRED');
+  const authenticatedAt=new Date(row.authenticated_at).getTime();
+  if(mode==='manage' && (row.mfa_method!=='totp'||!Number.isFinite(authenticatedAt)||authenticatedAt>Date.now()+10000||Date.now()-authenticatedAt>300000))throw new HttpError(403,'ยืนยัน Authenticator ก่อนจัดการวิธียืนยันตัวตน','MFA_REAUTH_REQUIRED');
   if(mode==='phone' && row.kind!=='full')throw new HttpError(403,'ยืนยัน MFA ก่อนยืนยันเบอร์','MFA_REQUIRED');
   return row;
 }

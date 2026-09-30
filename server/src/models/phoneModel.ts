@@ -13,7 +13,7 @@ export async function startPhoneVerification(sessionId:string,phone:string,recor
     if(Number(cooldown.seconds)>0)throw new OtpCooldownError(Number(cooldown.seconds));
     await execute('UPDATE users SET phone_sent_at=UTC_TIMESTAMP(3) WHERE id=?',[s.user_id],conn);
     const challengeId=await createFactorChallenge(sessionId,'phone',{phoneHash:hashToken(`phone:${phone}`)},conn);
-    await record(conn,'phone.verification.started',s.user_id);
+    await record(conn,'phone.verification.started',s.user_id,{noticeVersion:'1.2',purpose:'firebase_phone_verification',acknowledged:true});
     return {challengeId,retryAfter:60,expiresIn:180};
   });
 }

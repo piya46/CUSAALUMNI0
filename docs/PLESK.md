@@ -140,3 +140,7 @@ https://sso.example.com/api/auth/google/callback
 Passenger อาจหยุด process ที่ว่าง ทำให้ Audit Outbox worker หยุดระหว่างนั้นได้ ข้อมูล Outbox ยังคงอยู่ แต่การส่ง log จะรอ process กลับมาทำงาน ถ้าต้องให้ worker ทำงานต่อเนื่องให้ผู้ดูแลกำหนด process ขั้นต่ำ/อายุ idle ของ Passenger หรือจัด worker process แยกตามนโยบาย Host
 
 การเตรียมไฟล์และทดสอบในเครื่องไม่ได้ยืนยันว่า Plesk/Passenger บน Host จริงตั้งค่าครบ ยังต้องตรวจตามขั้นตอนหลัง deploy นี้
+
+## ส่วนขยายการยืนยันตัวตน
+
+ก่อนเปิดรุ่นที่มี Passkeys/LINE/Firebase ให้ apply migration 006 และเพิ่ม runtime grants ของตารางใหม่ ดู [ADDITIONAL-FACTORS.md](ADDITIONAL-FACTORS.md) สำหรับ callback, webhook, Firebase domain, credentials และ quota โค้ดนี้ยังใช้ Passenger ของ Plesk ไม่ต้องติดตั้ง PM2 เพิ่ม

@@ -1,5 +1,7 @@
 # CUSA SSO
 
+ส่วนขยายล่าสุด: [Passkeys, LINE และ Firebase SMS](docs/ADDITIONAL-FACTORS.md), [ผลทบทวน Delta Blueprint](docs/DELTA-REVIEW.md), [แพ็กเกจและขั้นตอนอัปโหลด HostAtom](docs/HOSTATOM-RELEASE.md)
+
 ระบบ User Management และ SSO ด้วย **Node.js / Express + React + MariaDB** ตามโครงสร้าง **MVC** พร้อมหน้าเว็บภาษาไทย รองรับ Google Login, Email OTP, Authenticator TOTP, recovery codes, allowlist, API keys และ API ยืนยันตัวตนสำหรับระบบภายใน
 
 ## เริ่มดูหน้าเว็บ
@@ -113,7 +115,7 @@ TOTP และ OTP policy อ้างอิงแนวทาง [OWASP Passwor
 
 ## SSO, cache และ audit
 
-รอบ Security / OTP / MFA recovery: อ่าน [ขั้นตอนอัปเกรด](docs/SECURITY-UPGRADE.md) ก่อน deploy ฐานเดิม ต้องรัน migration 004–005 โดยไม่เปิด installer ซ้ำ ใช้ [API reference](docs/SSO-INTEGRATION.md), [OpenAPI 3.1](web/public/openapi.json) และ [ขั้นตอนกู้คืน MFA พร้อมหลักฐาน](docs/MFA-RESET.md) สำหรับการตั้งค่าใหม่
+รอบ Security / OTP / MFA recovery: อ่าน [ขั้นตอนอัปเกรด](docs/SECURITY-UPGRADE.md) ก่อน deploy ฐานเดิม ต้องรัน migration 004–006 โดยไม่เปิด installer ซ้ำ ใช้ [API reference](docs/SSO-INTEGRATION.md), [OpenAPI 3.1](web/public/openapi.json) และ [ขั้นตอนกู้คืน MFA พร้อมหลักฐาน](docs/MFA-RESET.md) สำหรับการตั้งค่าใหม่
 
 หน้า MFA รับคำขอจากเจ้าของบัญชีที่ผ่าน Google Login ผู้ดูแลต้องยืนยัน TOTP ใหม่ก่อนเปิดภาพ/อนุมัติ ภาพถูกใส่ลายน้ำและเข้ารหัสด้วย `MFA_EVIDENCE_KEY` แยกต่างหาก เก็บนอก public และลบภายใน 7 วันหลังตัดสินใจ ต้องตั้ง Scheduled Task และยกเว้น directory นี้จาก backup/snapshot ตามคู่มือก่อนรับเอกสารจริง
 

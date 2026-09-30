@@ -50,7 +50,7 @@ export function ExtraMfa({identity,onVerified}:{identity:Identity;onVerified:()=
     }catch(e){if(alive){clearInterval(timer);setError((e as Error).message);setLine(null);}}finally{working=false;if(alive)setBusy(false);}},2500);
     return()=>{alive=false;clearInterval(timer);};
   },[line]);
-  async function act(action:()=>Promise<void>){setBusy(true);setError('');try{await action();}catch(e){setError((e as Error).message);if(e instanceof ApiError&&e.retryAfter)setDeadline(Date.now()+e.retryAfter*1000);}finally{setBusy(false);}}
+  async function act(action:()=>Promise<void>){setBusy(true);setError('');try{await action();}catch(e){setError((e as Error).message);if(e instanceof ApiError&&e.retryAfter){const stamp=Date.now();setNow(stamp);setDeadline(stamp+e.retryAfter*1000);}}finally{setBusy(false);}}
   if(!identity.factors?.passkey&&!identity.factors?.line)return null;
   return <div className="extra-mfa"><p>หรือใช้วิธียืนยันที่ผูกไว้</p>{error&&<p className="inline-error" role="alert">{error}</p>}
     {identity.factors.passkey&&<button className="button secondary full-width" disabled={busy} onClick={()=>void act(async()=>{
@@ -58,7 +58,7 @@ export function ExtraMfa({identity,onVerified}:{identity:Identity;onVerified:()=
       const result=await api<{challengeId:string;options:PublicKeyCredentialRequestOptionsJSON}>('/auth/passkeys/authenticate/options','POST',{});
       const response=await startAuthentication({optionsJSON:result.options});await api('/auth/passkeys/authenticate/verify','POST',{challengeId:result.challengeId,response});await onVerified();
     })}><Fingerprint size={18}/>ยืนยันด้วย Passkey</button>}
-    {identity.factors.line&&<button className="button secondary full-width" disabled={busy||remaining>0} onClick={()=>void act(async()=>{const result=await api<{challengeId:string;number:string;expiresIn:number;retryAfter:number}>('/auth/line/send','POST',{});setLine(result);setDeadline(Date.now()+result.retryAfter*1000);})}><MessageCircle size={18}/>{remaining?`ขอ LINE ใหม่ได้ใน ${remaining} วินาที`:'ยืนยันผ่าน LINE'}</button>}
+    {identity.factors.line&&<button className="button secondary full-width" disabled={busy||remaining>0} onClick={()=>void act(async()=>{const result=await api<{challengeId:string;number:string;expiresIn:number;retryAfter:number}>('/auth/line/send','POST',{});setLine(result);const stamp=Date.now();setNow(stamp);setDeadline(stamp+result.retryAfter*1000);})}><MessageCircle size={18}/>{remaining?`ขอ LINE ใหม่ได้ใน ${remaining} วินาที`:'ยืนยันผ่าน LINE'}</button>}
     {line&&<div className="number-matching" role="status"><p>เปิด LINE แล้วเลือกเลขนี้</p><strong>{line.number}</strong><small>ใช้สำหรับเข้าสู่ระบบ CUSA SSO · หมดอายุใน 3 นาที<br/>ห้ามบอกเลขให้ผู้อื่นหรืออนุมัติคำขอที่คุณไม่ได้เริ่ม</small></div>}
   </div>;
 }
@@ -74,10 +74,10 @@ export function PhoneVerification({settings,onVerified}:{settings:Settings;onVer
     const existing=getApps().find(a=>a.name==='cusa-phone');const app=existing??initializeApp(settings.firebase!,'cusa-phone');
     const auth=existing?getAuth(app):initializeAuth(app,{persistence:inMemoryPersistence});auth.languageCode='th';cleanupAuth.current=()=>signOut(auth);
     await signOut(auth);
-    const result=await api<{challengeId:string;retryAfter:number}>('/auth/phone/start','POST',{phone});challenge.current=result.challengeId;setDeadline(Date.now()+result.retryAfter*1000);confirmation.current=null;setSent(false);
-    captcha.current?.clear();captcha.current=new RecaptchaVerifier(auth,captchaId,{size:'normal'});
+    const result=await api<{challengeId:string;retryAfter:number}>('/auth/phone/start','POST',{phone,acknowledged:true,noticeVersion:'1.2'});challenge.current=result.challengeId;const stamp=Date.now();setNow(stamp);setDeadline(stamp+result.retryAfter*1000);confirmation.current=null;setSent(false);
+    captcha.current?.clear();captcha.current=new RecaptchaVerifier(auth,captchaId,{size:window.matchMedia('(max-width:480px)').matches?'compact':'normal'});
     confirmation.current=await signInWithPhoneNumber(auth,phone,captcha.current);setSent(true);setCode('');
-  }catch(e){setError(e instanceof ApiError?e.message:'ส่ง SMS ไม่สำเร็จ กรุณาตรวจสอบเบอร์และ reCAPTCHA หรือติดต่อผู้ดูแล');if(e instanceof ApiError&&e.retryAfter)setDeadline(Date.now()+e.retryAfter*1000);captcha.current?.clear();captcha.current=null;}finally{setBusy(false);}}
+  }catch(e){setError(e instanceof ApiError?e.message:'ส่ง SMS ไม่สำเร็จ กรุณาตรวจสอบเบอร์และ reCAPTCHA หรือติดต่อผู้ดูแล');if(e instanceof ApiError&&e.retryAfter){const stamp=Date.now();setNow(stamp);setDeadline(stamp+e.retryAfter*1000);}captcha.current?.clear();captcha.current=null;}finally{setBusy(false);}}
   async function verify(){setBusy(true);setError('');try{if(!confirmation.current)throw new Error();const result=await confirmation.current.confirm(code);const idToken=await result.user.getIdToken();await api('/auth/phone/verify','POST',{challengeId:challenge.current,idToken});await cleanupAuth.current?.();confirmation.current=null;await onVerified();}catch(e){setError(e instanceof ApiError?e.message:'รหัส SMS ไม่ถูกต้องหรือหมดอายุ');}finally{setBusy(false);}}
   return <div className="phone-verification"><p>ยืนยันการถือครองเบอร์ครั้งแรก ไม่ใช่การตรวจบัตรประชาชน และไม่ใช้ SMS แทน MFA</p>
     <label className="field">เบอร์มือถือพร้อมรหัสประเทศ<input type="tel" value={phone} placeholder="+66812345678" onChange={e=>{setPhone(e.target.value.replace(/[\s-]/g,''));setSent(false);confirmation.current=null;}} disabled={busy} autoComplete="tel"/></label>

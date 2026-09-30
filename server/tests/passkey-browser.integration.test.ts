@@ -23,6 +23,8 @@ test('real WebAuthn registration and assertions: enforce RP/origin/UV, rotate se
     const page=await browser.newPage();const cdp=await page.context().newCDPSession(page);
     await cdp.send('WebAuthn.enable');const authenticator=await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
     await page.goto(config.appOrigin);
+    // tsx/esbuild preserves function names using this helper inside evaluate.
+    await page.evaluate('window.__name = (fn) => fn');
     const opts=await registrationOptions(sessionId,async()=>{});
     const registration=await page.evaluate(async(options:any)=>{
       const decode=(v:string)=>Uint8Array.from(atob(v.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));

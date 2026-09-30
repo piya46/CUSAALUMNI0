@@ -37,6 +37,9 @@ export async function checkDeployment(config: Settings, root: string, nodeVersio
     } catch { add('REDIS_URL', false, 'REDIS_URL is not a valid Redis TCP URL.'); }
   }
   warn('PROXY_REVIEW', 'Verify TRUST_PROXY and forwarded-header sanitization against the actual hosting proxy chain.');
+  if(config.lineMfaEnabled)warn('LINE_PROVIDER', 'Verify LINE Login callback and signed Messaging webhook on the same LINE Provider, OA friendship and message quota.');
+  if(config.firebasePhoneEnabled)warn('FIREBASE_PROVIDER', 'Verify Phone provider, authorized HTTPS domain, SMS region/quota policy and service-account permissions; remove test phone numbers from production.');
+  if(config.firebasePhoneRequired)warn('PHONE_POLICY', 'Phone verification applies to new accounts; confirm the privacy basis and support path before enforcing.');
 
   for (const path of ['app.cjs', 'package-lock.json', 'server/dist/index.js', 'web/dist/index.html']) {
     const file = await stat(join(root, path)).catch(() => undefined);
@@ -45,7 +48,7 @@ export async function checkDeployment(config: Settings, root: string, nodeVersio
   const publicFiles = await readdir(join(root, 'public')).catch(() => null);
   add('DOCUMENT_ROOT', Boolean(publicFiles && publicFiles.every(name => name === '.gitkeep')), 'Plesk Document Root must use the empty public directory.');
   const migrations: string[] = await readdir(join(root, 'server/migrations')).catch(() => []);
-  add('MIGRATION_FILES', migrations.includes('004_security_hardening.sql') && migrations.includes('005_mfa_reset_evidence.sql'), 'Include migration files 004 and 005; this does not check the database migration state.');
+  add('MIGRATION_FILES', migrations.includes('004_security_hardening.sql') && migrations.includes('005_mfa_reset_evidence.sql') && migrations.includes('006_additional_factors.sql'), 'Include migration files 004, 005 and 006; this does not check the database migration state.');
   const envFile = await lstat(join(root, '.env')).catch(() => undefined);
   if (envFile && process.platform !== 'win32') add('ENV_FILE_MODE', envFile.isFile() && (envFile.mode & 0o077) === 0, 'The private .env file must not be group/world readable.');
 
