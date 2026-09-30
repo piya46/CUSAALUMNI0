@@ -1,0 +1,58 @@
+import type { Request,Response } from 'express';
+import type { RegistrationResponseJSON,AuthenticationResponseJSON } from '@simplewebauthn/server';
+import { z } from 'zod';
+import { config } from '../config.js';
+import { query } from '../db.js';
+import { audit,HttpError,sessionCookie,cookieOptions } from '../middleware/security.js';
+import { OtpCooldownError,type AuthAudit } from '../models/authModel.js';
+import * as passkey from '../models/passkeyModel.js';
+import * as line from '../models/lineModel.js';
+import * as phone from '../models/phoneModel.js';
+import { firebaseWebConfig,verifyFirebasePhoneToken } from '../services/firebasePhone.js';
+import { validLineSignature,requireLine } from '../services/line.js';
+const record=(req:Request):AuthAudit=>(conn,event,target,metadata)=>audit(req,event,target,metadata,conn);
+const id=z.uuid();
+const responseSchema=z.object({id:z.string().regex(/^[A-Za-z0-9_-]+$/).max(2048),rawId:z.string().max(2048),type:z.literal('public-key'),response:z.record(z.string(),z.unknown()),clientExtensionResults:z.record(z.string(),z.unknown())}).passthrough();
+const registerProof=responseSchema.extend({response:z.object({clientDataJSON:z.string(),attestationObject:z.string(),transports:z.array(z.enum(['ble','cable','hybrid','internal','nfc','smart-card','usb'])).optional()}).passthrough()});
+const authenticateProof=responseSchema.extend({response:z.object({clientDataJSON:z.string(),authenticatorData:z.string(),signature:z.string(),userHandle:z.string().optional()}).passthrough()});
+const proofSchema=z.object({challengeId:id,response:registerProof});
+function complete(res:Response,token:string|null){if(!token)throw new HttpError(401,'การยืนยันไม่ถูกต้อง หมดอายุ หรือถูกใช้แล้ว','INVALID_PROOF');res.cookie(sessionCookie,token,{...cookieOptions,maxAge:config.sessionHours*3600000});res.json({ok:true});}
+async function cooldown<T>(res:Response,work:()=>Promise<T>){try{return await work();}catch(error){if(error instanceof OtpCooldownError){res.setHeader('Retry-After',error.retryAfter);throw new HttpError(429,'กรุณารอครบ 60 วินาทีก่อนขอใหม่','OTP_COOLDOWN');}throw error;}}
+export async function factorStatus(userId:string){
+  const [row]=await query<Record<string,any>>('SELECT EXISTS(SELECT 1 FROM passkeys WHERE user_id=?) AS passkey,EXISTS(SELECT 1 FROM line_identities WHERE user_id=?) AS line,EXISTS(SELECT 1 FROM phone_identities WHERE user_id=?) AS phone',[userId,userId,userId]);
+  return {passkey:config.passkeyEnabled&&Boolean(row.passkey),line:config.lineMfaEnabled&&Boolean(row.line),phoneVerified:Boolean(row.phone)};
+}
+export async function settings(req:Request,res:Response){res.json({...(await factorStatus(req.identity!.userId)),passkeyEnabled:config.passkeyEnabled,lineEnabled:config.lineMfaEnabled,phoneEnabled:config.firebasePhoneEnabled,passkeys:await passkey.listPasskeys(req.identity!.userId),...(config.firebasePhoneEnabled?{firebase:firebaseWebConfig()}:{})});}
+export async function registerOptions(req:Request,res:Response){res.json(await passkey.registrationOptions(req.identity!.sessionId,record(req)));}
+export async function registerVerify(req:Request,res:Response){const b=proofSchema.extend({name:z.string().trim().min(1).max(80)}).strict().parse(req.body);if(!await passkey.registerPasskey(req.identity!.sessionId,b.challengeId,b.name,b.response as RegistrationResponseJSON,record(req)))throw new HttpError(400,'ลงทะเบียน Passkey ไม่สำเร็จ กรุณาเริ่มใหม่','INVALID_PROOF');res.status(201).json({ok:true});}
+export async function authenticateOptions(req:Request,res:Response){res.json(await passkey.authenticationOptions(req.identity!.sessionId));}
+export async function authenticateVerify(req:Request,res:Response){const b=z.object({challengeId:id,response:authenticateProof}).strict().parse(req.body);complete(res,await passkey.authenticatePasskey(req.identity!.sessionId,b.challengeId,b.response as AuthenticationResponseJSON,record(req)));}
+export async function deletePasskey(req:Request,res:Response){await passkey.deletePasskey(req.identity!.sessionId,id.parse(req.params.id),record(req));res.json({ok:true});}
+export async function lineStart(req:Request,res:Response){res.json(await line.lineLinkStart(req.identity!.sessionId,record(req)));}
+export async function lineCallback(req:Request,res:Response){
+  try{const state=z.string().regex(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$/).parse(req.query.state),code=z.string().min(1).max(2048).parse(req.query.code);await line.lineLinkFinish(req.identity!.sessionId,state,code,record(req));res.redirect('/login?line=linked');}
+  catch{await audit(req,'mfa.line.link.failure',req.identity?.userId,{failure_reason:'LINE_LINK_REJECTED'});res.redirect('/login?line=error');}
+}
+export async function unlinkLine(req:Request,res:Response){await line.unlinkLine(req.identity!.sessionId,record(req));res.json({ok:true});}
+export async function lineSend(req:Request,res:Response){res.json(await cooldown(res,()=>line.startLineChallenge(req.identity!.sessionId,record(req))));}
+export async function lineStatus(req:Request,res:Response){res.json(await line.lineChallengeStatus(req.identity!.sessionId,id.parse(req.params.id)));}
+export async function lineVerify(req:Request,res:Response){const b=z.object({challengeId:id}).strict().parse(req.body);complete(res,await line.finishLineChallenge(req.identity!.sessionId,b.challengeId,record(req)));}
+export async function lineWebhook(req:Request,res:Response){
+  requireLine();if(!Buffer.isBuffer(req.body)||!validLineSignature(req.body,req.get('x-line-signature')))throw new HttpError(401,'Invalid webhook signature','INVALID_SIGNATURE');
+  let body;try{body=JSON.parse(req.body.toString('utf8'));}catch{throw new HttpError(400,'Invalid webhook JSON','VALIDATION_ERROR');}
+  const input=z.object({events:z.array(z.object({type:z.string(),timestamp:z.number(),source:z.object({type:z.string(),userId:z.string().optional()}).passthrough(),postback:z.object({data:z.string().max(500)}).optional()}).passthrough()).max(100)}).passthrough().parse(body);
+  for(const event of input.events){
+    if(event.type!=='postback'||event.source.type!=='user'||!/^U[0-9a-f]{32}$/.test(event.source.userId??'')||!event.postback||Math.abs(Date.now()-event.timestamp)>180000)continue;
+    const data=new URLSearchParams(event.postback.data),challengeId=data.get('cusa_mfa'),choice=data.get('choice');
+    if(!id.safeParse(challengeId).success||!choice||!/^[A-Za-z0-9_-]{43}$/.test(choice))continue;
+    await line.applyLineChoice(challengeId!,event.source.userId!,choice,record(req));
+  }
+  res.json({ok:true});
+}
+export async function phoneStart(req:Request,res:Response){const b=z.object({phone:z.string().regex(/^\+[1-9]\d{7,14}$/)}).strict().parse(req.body);res.json(await cooldown(res,()=>phone.startPhoneVerification(req.identity!.sessionId,b.phone,record(req))));}
+export async function phoneVerify(req:Request,res:Response){
+  const b=z.object({challengeId:id,idToken:z.string().min(100).max(10000)}).strict().parse(req.body);
+  const proof=await verifyFirebasePhoneToken(b.idToken);
+  if(!await phone.finishPhoneVerification(req.identity!.sessionId,b.challengeId,proof,record(req)))throw new HttpError(409,'ยืนยันเบอร์ไม่ได้ กรุณาเริ่มใหม่หรือติดต่อผู้ดูแล','PHONE_UNAVAILABLE');
+  res.json({ok:true});
+}

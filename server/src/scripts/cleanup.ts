@@ -1,7 +1,7 @@
 import {execute,pool} from '../db.js';
 
 // Static allowlist only. Audit evidence and user records are never pruned here.
-const tables=[['sessions','expires_at'],['oauth_flows','expires_at'],['otp_challenges','expires_at'],['mfa_enrollments','expires_at'],['authorization_codes','expires_at'],['access_tokens','expires_at'],['rate_limits','reset_at']] as const;
+const tables=[['factor_challenges','expires_at'],['sessions','expires_at'],['oauth_flows','expires_at'],['otp_challenges','expires_at'],['mfa_enrollments','expires_at'],['authorization_codes','expires_at'],['access_tokens','expires_at'],['rate_limits','reset_at']] as const;
 try{
   for(const [table,column] of tables){
     let total=0;

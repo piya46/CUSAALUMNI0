@@ -88,7 +88,7 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
       // Never redirect before validating the exact registered callback, even for login/errors.
       const { parameters, destination, returnTo } = await authorizationContext(req.query);
       const { client_id: applicationId, redirect_uri: redirectUri, state, code_challenge: challenge } = parameters;
-      if (!req.identity || req.identity.kind !== 'full') {
+      if (!req.identity || req.identity.kind !== 'full' || req.identity.phoneRequired) {
         res.redirect(303, `/login?${new URLSearchParams({ returnTo })}`);
         return;
       }

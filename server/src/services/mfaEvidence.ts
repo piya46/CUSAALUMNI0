@@ -1,10 +1,11 @@
 import { createCipheriv,createDecipheriv,randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir,open,realpath,unlink,chmod } from 'node:fs/promises';
-import { resolve,sep } from 'node:path';
+import { mkdir,open,unlink,chmod } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { config } from '../config.js';
+import { resolveEvidenceDirectory } from './evidenceDirectory.js';
 
 const root=fileURLToPath(new URL('../../../',import.meta.url));
 const options={limitInputPixels:20_000_000,failOn:'warning' as const};
@@ -13,10 +14,9 @@ function master(){const key=Buffer.from(config.mfaEvidenceKey,'base64');if(key.l
 function encrypt(value:Buffer,key:Buffer,aad:string){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);cipher.setAAD(Buffer.from(aad));const encrypted=Buffer.concat([cipher.update(value),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),encrypted]);}
 function decrypt(value:Buffer,key:Buffer,aad:string){if(value.length<28)throw new Error('Invalid encrypted evidence');const cipher=createDecipheriv('aes-256-gcm',key,value.subarray(0,12));cipher.setAAD(Buffer.from(aad));cipher.setAuthTag(value.subarray(12,28));return Buffer.concat([cipher.update(value.subarray(28)),cipher.final()]);}
 async function directory(){
-  const folder=resolve(config.mfaEvidenceDir);await mkdir(folder,{recursive:true,mode:0o700});
-  const actual=await realpath(folder);
-  if(actual===resolve(root)||actual===resolve('/'))throw new Error('Use a dedicated private evidence directory');
-  for(const path of ['public','web/public','web/dist','server/dist']){const unsafe=resolve(root,path);if(actual===unsafe||actual.startsWith(unsafe+sep))throw new Error('Evidence directory must be outside public roots');}
+  const folder=await resolveEvidenceDirectory(config.mfaEvidenceDir,root);
+  await mkdir(folder,{recursive:true,mode:0o700});
+  const actual=await resolveEvidenceDirectory(folder,root);
   await chmod(actual,0o700);return actual;
 }
 async function writeExclusive(path:string,data:Buffer){const file=await open(path,constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY|constants.O_NOFOLLOW,0o600);try{await file.writeFile(data);await file.sync();}finally{await file.close();}}

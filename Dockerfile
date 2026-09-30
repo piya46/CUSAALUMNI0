@@ -11,6 +11,7 @@ RUN npm run build && npm prune --omit=dev
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production PORT=4000
 WORKDIR /app
+RUN apk add --no-cache font-dejavu && mkdir -p /app/var/mfa-evidence && chown -R node:node /app/var && chmod 700 /app/var/mfa-evidence
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/server/package.json ./server/package.json
 COPY --from=build --chown=node:node /app/server/dist ./server/dist

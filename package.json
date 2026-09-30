@@ -14,7 +14,15 @@
     "test:browser": "npm run build && playwright test",
     "start": "npm run start -w server",
     "db:migrate": "npm run db:migrate -w server",
-    "db:bootstrap": "npm run db:bootstrap -w server"
+    "db:bootstrap": "npm run db:bootstrap -w server",
+    "deploy:check": "node server/dist/scripts/deploymentCheck.js",
+    "deploy:package": "node scripts/package-release.mjs",
+    "ops:check": "npm run ops:check -w server",
+    "evidence:purge": "npm run evidence:purge -w server",
+    "db:cleanup": "node server/dist/scripts/cleanup.js",
+    "test:deployment": "node --test tests/deployment/*.test.mjs",
+    "db:migrate:production": "node server/dist/migrate.js",
+    "db:bootstrap:production": "node server/dist/bootstrap.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

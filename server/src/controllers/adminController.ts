@@ -27,6 +27,10 @@ export async function deleteUser(req: Request, res: Response) {
   await model.removeUser(actor(req), idSchema.parse(req.params.id), auditWriter(req));
   res.json({ ok: true });
 }
+export async function revokeUserSessions(req: Request, res: Response) {
+  const result = await model.revokeUserSessions(actor(req), idSchema.parse(req.params.id), auditWriter(req));
+  res.json({ ok: true, ...result });
+}
 export async function createApplication(req: Request, res: Response) {
   const application = await model.addApplication(actor(req), applicationSchema.parse(req.body), auditWriter(req));
   res.status(201).json({ application });

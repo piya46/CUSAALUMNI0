@@ -24,7 +24,12 @@ export function requireSession(req: Request, _res: Response, next: NextFunction)
 }
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   if (!req.identity) throw new HttpError(401, 'กรุณาเข้าสู่ระบบ', 'UNAUTHENTICATED');
+  if (req.identity.phoneRequired && req.identity.kind === 'full') throw new HttpError(403, 'Please verify your phone number', 'PHONE_REQUIRED');
   if (req.identity.kind !== 'full') throw new HttpError(403, 'กรุณายืนยันรหัส OTP หรือ Authenticator', 'MFA_REQUIRED'); next();
+}
+export function requireFullSession(req:Request,_res:Response,next:NextFunction){
+  if(!req.identity || req.identity.kind!=='full')throw new HttpError(403,'กรุณายืนยัน MFA ก่อนดำเนินการ','MFA_REQUIRED');
+  next();
 }
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (req.identity?.kind !== 'full' || req.identity.role !== 'admin') throw new HttpError(403, 'เฉพาะผู้ดูแลระบบ', 'FORBIDDEN');

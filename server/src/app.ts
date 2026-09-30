@@ -1,3 +1,4 @@
+import { lineWebhook } from './controllers/factorController.js';
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -5,6 +6,7 @@ import { rateLimit as localRateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { staticCachePolicy } from './services/staticCache.js';
 import { auditAvailability } from './middleware/auditAvailability.js';
 import { requestContext, securityFailure } from './middleware/requestContext.js';
 import { config,assertServerConfiguration } from './config.js';
@@ -21,7 +23,7 @@ export function createApp() {
   assertServerConfiguration();
   const app=express();
   app.disable('x-powered-by'); app.set('trust proxy',config.trustProxy);
-  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'data:','blob:','https://lh3.googleusercontent.com'],connectSrc:["'self'"],frameAncestors:["'none'"],formAction:["'self'"],upgradeInsecureRequests:config.secureCookies?[]:null}},crossOriginEmbedderPolicy:false,strictTransportSecurity:config.secureCookies?{maxAge:31536000,includeSubDomains:true}:false}));
+  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'",...(config.firebasePhoneEnabled?['https://www.google.com/recaptcha/','https://www.gstatic.com/recaptcha/']:[])],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'data:','blob:','https://lh3.googleusercontent.com'],connectSrc:["'self'",...(config.firebasePhoneEnabled?['https://identitytoolkit.googleapis.com','https://securetoken.googleapis.com','https://www.google.com/recaptcha/','https://recaptchaenterprise.googleapis.com']:[])],frameSrc:["'self'",...(config.firebasePhoneEnabled?['https://www.google.com/recaptcha/','https://recaptcha.google.com/recaptcha/',`https://${config.firebaseAuthDomain}`]:[])],frameAncestors:["'none'"],formAction:["'self'"],upgradeInsecureRequests:config.secureCookies?[]:null}},crossOriginEmbedderPolicy:false,strictTransportSecurity:config.secureCookies?{maxAge:31536000,includeSubDomains:true}:false}));
   app.use(requestContext);
   app.use('/api',(_req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Pragma','no-cache');next();});
   const coarseLimit=(limit:number)=>localRateLimit({windowMs:60_000,limit,standardHeaders:'draft-8',legacyHeaders:false,
@@ -31,6 +33,7 @@ export function createApp() {
     if(['/health','/ready'].includes(req.path)) return next();
     return ['/sso/token','/sso/introspect'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
   });
+  app.post('/api/auth/line/webhook',requireConfigured,auditAvailability,express.raw({type:'application/json',limit:'64kb'}),lineWebhook);
   app.use(express.json({limit:'16kb'}));
   app.use(express.urlencoded({extended:false,limit:'16kb'}));
   app.use(cookieParser());
@@ -56,7 +59,7 @@ export function createApp() {
     if (!config.installEnabled) return res.status(404).type('text').send('Installer is disabled.');
     next();
   });
-  if (existsSync(webDir)) { app.use(express.static(webDir,{index:false,maxAge:'1h'})); app.get('/{*path}',(req,res)=>{res.setHeader('Cache-Control',/^\/install\/?$/i.test(req.path)?'no-store':'no-cache');res.sendFile(`${webDir}/index.html`);}); }
+  if (existsSync(webDir)) { app.use(express.static(webDir,{index:false,setHeaders:(res,file)=>res.setHeader('Cache-Control',staticCachePolicy(file,webDir))})); app.get('/{*path}',(req,res)=>{res.setHeader('Cache-Control',/^\/install\/?$/i.test(req.path)?'no-store':'no-cache');res.sendFile(`${webDir}/index.html`);}); }
   app.use(async (error:unknown,req:express.Request,res:express.Response,_next:express.NextFunction)=>{
     const reason=error instanceof HttpError ? error.code ?? `HTTP_${error.status}` : error instanceof z.ZodError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
     securityFailure(req,reason);

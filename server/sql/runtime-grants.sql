@@ -30,3 +30,9 @@ GRANT SELECT ON `scicualu_alumni`.`audit_logs` TO 'cusa_audit_reader'@'localhost
 GRANT SELECT ON `scicualu_alumni`.`audit_outbox` TO 'cusa_audit_reader'@'localhost';
 -- Verify effective SHOW GRANTS and role inheritance. Never grant runtime
 -- GRANT OPTION, FILE, SUPER, CREATE, ALTER, DROP, TRIGGER or schema-wide DML.
+
+-- Additional factors (migration 006).
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`passkeys` TO 'cusa_runtime'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`line_identities` TO 'cusa_runtime'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`phone_identities` TO 'cusa_runtime'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`factor_challenges` TO 'cusa_runtime'@'localhost';

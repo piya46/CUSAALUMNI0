@@ -1,5 +1,23 @@
 # Validation record
 
+## Current security / recovery revision — 2026-09-30
+
+- Server and web typecheck/build pass. Production frontend uses route/code splitting for legal, installer, workspace and API docs.
+- Final full backend run: **92 passed, 0 failed**, with the installer scenario intentionally skipped in the reused local test DB (93 total). Includes the stopped-audit-worker fail-closed regression.
+- Fresh-database installer run: **1 passed**, exercising all five migrations, checksum protection, interrupted DDL retry, transactional bootstrap rollback, concurrency and permanent lock. Together with the backend run this covers **93 checks**; these were separate runs, not one combined output.
+- Browser suite: **15 passed** (Chrome, local built server). Final image-ready guard was rechecked with **2 passing** owner-upload/admin-review browser scenarios against the final production build after the guard changed.
+- Actual local MariaDB runtime grant probe: audit INSERT permitted; zero-row UPDATE/DELETE on audit_logs, UPDATE installation_state and DELETE schema_migrations rejected with ER_TABLEACCESS_DENIED_ERROR. Read-only operations check returned `{ok:true,queue:{pending:0,oldestAgeSeconds:0},issues:[]}` for this disposable restricted account. This is not proof of HostAtom grants.
+- Evidence tests cover JPEG/PNG decoding, metadata removal, watermarking, AES-GCM tamper detection and request binding, 0700/0600 permissions, symlink/traversal rejection, CSRF/owner isolation, fresh TOTP access, two other reviewers for admin targets, stale-factor rejection, missing-file rejection, audit rollback, concurrent single decision, session/recovery revocation, expiry and idempotent destruction.
+- OTP tests cover six input boxes/paste/leading zero, Ref binding, cross-session cooldown, reload persistence, mail-failure invalidation, escaped registered Service purpose and CUSA SSO MIME sender. Email preview uses synthetic code/Ref only; no Gmail message was sent.
+- API docs browser check resolves all local OpenAPI references, tests endpoint search/mobile layout/download; BFF example passes `node --check`. This does not assert third-party OAuth/OIDC certification.
+- New MFA_EVIDENCE_KEY was generated only in ignored local .env, with file mode0600; no value is included in logs/docs. Tests override it with synthetic keys and temporary private directories. No image with real personal data was used.
+
+Artifacts: `test-results/` for browser screenshots (regenerated per run), [OTP email preview](previews/otp-email.html), [Google branding PNG](../web/public/cusa-sso.png). Deployment instructions: [Security upgrade](SECURITY-UPGRADE.md), [MFA recovery](MFA-RESET.md), [Google branding](GOOGLE-BRANDING.md).
+
+Remaining environment checks: actual Google Login/Gmail delivery and Gmail inbox rendering; Google Search Console/branding approval; HostAtom proxy/header sanitization; real runtime grants; scheduled jobs, alerts and backup/snapshot exclusions; production load; legal/privacy review and independent penetration test. No hosting migrations, real email delivery, DNS changes or deployment were performed during this security implementation.
+
+## Earlier validation and setup history
+
 Updated 2026-09-29. Database tests use loopback only; no migrations were applied to the configured remote host.
 
 - `npm run typecheck`: passes for server and React.

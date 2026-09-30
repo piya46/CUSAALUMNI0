@@ -7,7 +7,8 @@ import { HttpError } from './security.js';
 let snapshot:{at:number;healthy:boolean}|undefined;
 let pending:Promise<boolean>|undefined;
 async function available() {
-  if(getAuditWorkerStatus().faulted)return false;
+  const worker=getAuditWorkerStatus();
+  if(!worker.running||worker.faulted)return false;
   if(snapshot&&Date.now()-snapshot.at<5000)return snapshot.healthy;
   if(!pending) pending=getAuditQueueHealth().then(q=>q.pending<10000&&q.oldestAgeSeconds<300).catch(()=>false)
     .then(healthy=>{snapshot={at:Date.now(),healthy};return healthy;}).finally(()=>{pending=undefined;});

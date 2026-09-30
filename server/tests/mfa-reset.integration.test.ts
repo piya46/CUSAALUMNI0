@@ -86,5 +86,5 @@ test('missing files block approval; due evidence is destroyed and cannot be read
   await reset.purgeResetEvidence();await reset.purgeResetEvidence();assert.ok((await reset.ownReset(owner.userId)).purgedAt);
   const second=await fixture(),another=await submit(second.userId);await execute('UPDATE mfa_reset_requests SET delete_after=DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 30 MINUTE) WHERE id=?',[another]);
   await reset.purgeResetEvidence();await assert.rejects(access(join(directory,`${another}.enc`)));await assert.rejects(access(join(directory,`${another}.key`)));
-  const [log]=await query<any>("SELECT id FROM audit_outbox WHERE event='mfa.reset.evidence.destroyed' AND target=?",[second.userId]);assert.ok(log);
+  const [log]=await query<any>("SELECT id FROM audit_outbox WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event'))='mfa.reset.evidence.destroyed' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.target'))=?",[second.userId]);assert.ok(log);
 });

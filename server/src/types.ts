@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 export interface Identity {
-  firstName?: string; lastName?: string;
+  firstName?: string; lastName?: string; phoneRequired?:boolean;
   sessionId: string; userId: string; email: string; name: string; avatar: string | null;
   role: 'admin' | 'user'; kind: 'pending' | 'full'; csrfToken: string;
   totpEnabled: boolean; mfaMethod: string | null; authenticatedAt: Date;

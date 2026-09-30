@@ -1,3 +1,4 @@
+import { clearAdditionalFactors } from './factorModel.js';
 import { randomUUID } from 'node:crypto';
 import { hashToken } from '../services/crypto.js';
 import { execute,query,transaction } from '../db.js';
@@ -81,6 +82,7 @@ export async function decideReset(actor:Actor,id:string,decision:'approve'|'reje
         if(!first)throw new HttpError(409,'ผู้อนุมัติคนแรกไม่มีสิทธิ์แล้ว ให้ปฏิเสธและเริ่มคำขอใหม่','REVIEWER_REVOKED');
       }
       await execute('UPDATE users SET totp_secret=NULL,totp_last_step=NULL,mfa_failed_attempts=0,mfa_locked_until=NULL WHERE id=?',[row.user_id],conn);
+      await clearAdditionalFactors(row.user_id,conn);
       await execute('DELETE FROM mfa_recovery_codes WHERE user_id=?',[row.user_id],conn);
       await execute('DELETE FROM sessions WHERE user_id=?',[row.user_id],conn); // cascades enrollment, authorization codes and access tokens
     }

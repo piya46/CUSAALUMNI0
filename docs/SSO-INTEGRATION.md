@@ -10,7 +10,7 @@ API นี้เป็น SSO สำหรับระบบภายในท�
 4. สร้าง Role และเพิ่มผู้ใช้เป็นสมาชิกของ Service นี้จากหน้า “สิทธิ์แต่ละ Service” แล้วกำหนดหน่วยงานและ Role ตาม [คู่มือ](SERVICE-ACCESS.md) บัญชีที่อยู่ใน allowlist อย่างเดียวยังเข้า Service ไม่ได้
 5. เปิด backend session storage ที่ใช้ร่วมกันได้ เช่น Redis/MariaDB พร้อม cookie `HttpOnly; Secure; SameSite=Lax` และป้องกัน CSRF ที่ระบบปลายทาง
 
-**ห้ามวาง API key ใน React, localStorage, sessionStorage, URL หรือ repository** Browser สร้าง PKCE และรับ authorization code; backend เป็นผู้แลก code ด้วย API key และเก็บ access token
+**ห้ามวาง API key ใน React, localStorage, sessionStorage, URL หรือ repository** แนวทางหลักให้ BFF สร้าง state/PKCE verifier เก็บใน server session แล้วรับ callback เอง ตัวอย่าง BFF ฉบับใหม่อยู่ที่ [BFF-FLOW.mjs](BFF-FLOW.mjs) และในหน้า “คู่มือเชื่อมต่อ API” ตัวอย่าง browser PKCE ด้านล่างเป็นรูปแบบทางเลือกสำหรับระบบเดิม โดยยังต้องแลกและเก็บ token ฝั่ง backend
 
 ## Endpoint และอายุข้อมูล
 
@@ -239,3 +239,171 @@ export async function finishSso() {
 ก่อนเปิด production ต้องทดสอบกับ MariaDB สำหรับ environment ทดสอบ: ใช้ code เดียวกันแลกพร้อมกันสอง request (สำเร็จหนึ่งครั้ง), revoke session/application/allowlist/soft-delete user แล้วตรวจทั้ง introspect และ userinfo, ทดสอบ key หมดอายุและ key ของ application อื่น รวมถึง CORS สอง origin จริง ชุด unit tests ไม่แทนการทดสอบ transaction/isolation บน MariaDB จริง
 
 แนวทาง security อ้างอิง [OAuth 2.0 Security Best Current Practice — RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html), [PKCE — RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) และ [Token Introspection — RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) การใช้แนวทางเหล่านี้ไม่ได้หมายความว่า API นี้ผ่านการรับรอง OAuth/OIDC interoperability
+
+
+## API Reference v1.1
+
+หน้า **คู่มือเชื่อมต่อ API** มีสารบัญ ค้นหา endpoint ตาราง parameters/response ตัวอย่าง curl และ BFF พร้อมปุ่มคัดลอก ดาวน์โหลด [OpenAPI 3.1](../web/public/openapi.json) หรือเรียก `/openapi.json` บนโดเมน SSO ตัวไฟล์ไม่มี secret และนำเข้า Postman/เครื่องมือ OpenAPI ได้ ค่า example ทั้งหมดเป็นข้อมูลจำลอง
+
+### GET `/api/sso/authorize`
+
+Browser navigation หลัง BFF สร้างและเก็บ state/verifier ใน server session; code มีอายุ 90 วินาที ใช้ครั้งเดียว ต้องมีสมาชิกและ Role ของ Service
+
+| Field | Location | Required | Details |
+| --- | --- | --- | --- |
+| `response_type` | query | yes | Authorization Code grant เท่านั้น ['code'] |
+| `client_id` | query | yes | Application ID จากหน้า Applications ไม่ใช่ Google Client ID  |
+| `redirect_uri` | query | yes | Callback ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร  |
+| `state` | query | yes | CSPRNG อย่างน้อย 32 bytes ผูกกับ BFF session และใช้ครั้งเดียว  |
+| `code_challenge` | query | yes | BASE64URL(SHA256(verifier)) ไม่มี = padding  |
+| `code_challenge_method` | query | yes | ไม่รองรับ plain ['S256'] |
+
+| HTTP | Response |
+| --- | --- |
+| 303 | ส่งไป /login เมื่อยังไม่ผ่าน MFA; สำเร็จส่ง callback?code=...&state=...; account ไม่มีสิทธิ์ไป /login?auth=access_denied |
+| 400 | Validation / invalid grant |
+| 401 | Missing, expired or revoked credential |
+| 403 | Insufficient scope / CORS / account access |
+| 429 | Quota exceeded; respect Retry-After |
+| 503 | Dependency or audit unavailable; fail closed |
+| 500 | Unexpected server failure |
+
+### GET `/api/sso/login-context`
+
+ใช้โดยหน้า Login ของ CUSA SSO; ผู้เชื่อมต่อทั่วไปเริ่มที่ authorize ได้เลย ไม่ออก token/code
+
+| Field | Location | Required | Details |
+| --- | --- | --- | --- |
+| `response_type` | query | yes | Authorization Code grant เท่านั้น ['code'] |
+| `client_id` | query | yes | Application ID จากหน้า Applications ไม่ใช่ Google Client ID  |
+| `redirect_uri` | query | yes | Callback ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร  |
+| `state` | query | yes | CSPRNG อย่างน้อย 32 bytes ผูกกับ BFF session และใช้ครั้งเดียว  |
+| `code_challenge` | query | yes | BASE64URL(SHA256(verifier)) ไม่มี = padding  |
+| `code_challenge_method` | query | yes | ไม่รองรับ plain ['S256'] |
+
+| HTTP | Response |
+| --- | --- |
+| 200 | Success |
+| 400 | Validation / invalid grant |
+| 401 | Missing, expired or revoked credential |
+| 403 | Insufficient scope / CORS / account access |
+| 429 | Quota exceeded; respect Retry-After |
+| 503 | Dependency or audit unavailable; fail closed |
+| 500 | Unexpected server failure |
+
+### POST `/api/sso/token`
+
+เรียกจาก BFF เท่านั้น ต้องมี identity:read และ callback/verifier เดิม ไม่รองรับ refresh_token/password/client_credentials; อย่า retry code เดิมเมื่อไม่ทราบผลการแลก
+
+| Field | Location | Required | Details |
+| --- | --- | --- | --- |
+| `grant_type` | body | yes |  ['authorization_code'] |
+| `code` | body | yes | Opaque credential: CSPRNG 32 bytes, base64url without padding  |
+| `redirect_uri` | body | yes | Callback เดียวกับ authorize  |
+| `code_verifier` | body | yes | PKCE verifier เดิม ห้ามสร้างใหม่ที่ callback  |
+
+```sh
+curl --request POST "$SSO_ORIGIN/api/sso/token" \
+  --header 'Content-Type: application/json' \
+  --header "X-API-Key: $SSO_API_KEY" \
+  --data '{"grant_type":"authorization_code","code":"<CODE>","redirect_uri":"https://portal.example.com/auth/callback","code_verifier":"<ORIGINAL_VERIFIER>"}'
+```
+
+| HTTP | Response |
+| --- | --- |
+| 200 | Success |
+| 400 | Validation / invalid grant |
+| 401 | Missing, expired or revoked credential |
+| 403 | Insufficient scope / CORS / account access |
+| 429 | Quota exceeded; respect Retry-After |
+| 503 | Dependency or audit unavailable; fail closed |
+| 500 | Unexpected server failure |
+
+### POST `/api/sso/introspect`
+
+ต้องมี token:introspect ตรวจได้เฉพาะ token ของ application เดียวกัน HTTP 200 ไม่เท่ากับ authenticated ต้องตรวจ active, aud, exp และ roles; identity cache สูงสุด 5 วินาที
+
+| Field | Location | Required | Details |
+| --- | --- | --- | --- |
+| `token` | body | yes | Opaque access token  |
+
+```sh
+curl --request POST "$SSO_ORIGIN/api/sso/introspect" \
+  --header 'Content-Type: application/json' \
+  --header "X-API-Key: $SSO_API_KEY" \
+  --data '{"token":"<ACCESS_TOKEN>"}'
+```
+
+| HTTP | Response |
+| --- | --- |
+| 200 | Active identity หรือ inactive ไม่มีข้อมูลผู้ใช้ |
+| 400 | Validation / invalid grant |
+| 401 | Missing, expired or revoked credential |
+| 403 | Insufficient scope / CORS / account access |
+| 429 | Quota exceeded; respect Retry-After |
+| 503 | Dependency or audit unavailable; fail closed |
+| 500 | Unexpected server failure |
+
+### GET `/api/sso/userinfo`
+
+Bearer access token; หากส่ง Origin ต้องตรงกับ origin ของ application เจ้าของ token ไม่มี wildcard/credentials CORS ระบบ BFF ควรเรียกผ่าน backend
+
+| Field | Location | Required | Details |
+| --- | --- | --- | --- |
+| `Origin` | header | no | Browser origin; ต้องตรงกับ origin ของ registered callback  |
+
+```sh
+curl "$SSO_ORIGIN/api/sso/userinfo" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+| HTTP | Response |
+| --- | --- |
+| 200 | Success |
+| 400 | Validation / invalid grant |
+| 401 | Invalid/expired access token; WWW-Authenticate: Bearer |
+| 403 | Insufficient scope / CORS / account access |
+| 429 | Quota exceeded; respect Retry-After |
+| 503 | Dependency or audit unavailable; fail closed |
+| 500 | Unexpected server failure |
+
+### OPTIONS `/api/sso/userinfo`
+
+อนุญาต GET และ Authorization header จาก registered origin เท่านั้น
+
+| Field | Location | Required | Details |
+| --- | --- | --- | --- |
+| `Origin` | header | yes | Origin ของ callback ที่ลงทะเบียน  |
+| `Access-Control-Request-Method` | header | yes | GET  |
+| `Access-Control-Request-Headers` | header | no | Authorization ถ้ามี  |
+
+| HTTP | Response |
+| --- | --- |
+| 204 | Preflight accepted; Access-Control-Allow-Origin เป็น origin ที่ตรวจแล้ว |
+| 400 | Validation / invalid grant |
+| 401 | Missing, expired or revoked credential |
+| 403 | Insufficient scope / CORS / account access |
+| 429 | Quota exceeded; respect Retry-After |
+| 503 | Dependency or audit unavailable; fail closed |
+| 500 | Unexpected server failure |
+
+## ขอบเขตการ retry / timeout / caching
+
+- Timeout ฝั่ง BFF ตัวอย่าง 5 วินาที; SSO ติดต่อไม่ได้ให้ fail closed ด้วย 503 ไม่ใช้ profile ที่เคยเก็บไว้ให้ผ่าน operation
+- 429 อ่าน Retry-After แล้วใช้ backoff+jitter; ไม่ retry invalid_client/invalid_grant ด้วย credentials/code เดิม หาก token exchange timeout code อาจถูกใช้แล้ว ให้เริ่ม authorization ใหม่
+- โควตา `/token` + `/introspect` รวมกันต่อ Application 3,000/min และต่อ API key 1,500/min; local coarse limit 12,000/min/IP/instance คีย์ผิดไม่เข้าถึง introspection cache
+- Introspection cache สูงสุด 5 วินาทีและไม่เกิน effective expiry มี single-flight เฉพาะคีย์เดียวกัน ไม่รับประกันทุก request ใช้ SQL รวมเพียงหนึ่งครั้ง: ยังมีการตรวจ API key และ shared quota ก่อน cache
+- ไม่เพิ่ม cache ฝั่ง BFF หากต้องการ revoke delay ตามขอบเขตข้างต้น ปิด server cache ด้วย INTROSPECTION_CACHE_SECONDS=0 หากต้องการตรวจ live ทุกครั้ง และใช้ NTP แทนต่อเวลา token ด้วย grace period
+- Logout ของ BFF ลบ session/token ฝั่ง BFF ผ่าน POST+CSRF ไม่ได้ออกจาก Google หรือทุก Service ไม่มี token revocation endpoint สำหรับ client; Admin ถอน session/Application/สมาชิก Service ได้
+- Callback ไม่มี analytics และ reverse proxy access log ต้องไม่บันทึก query ของ auth/callback โดยที่ token/state/code/verifier ไม่เข้า APM/logs
+- ตัวอย่าง BFF รองรับหนึ่ง login flow ต่อ session; flow ใหม่แทน flow เดิม หากต้องรองรับหลายแท็บ ใช้ persistent flow store ผูก session+state พร้อม atomic consume, TTL และ bounded count ก่อนนำขึ้น production
+
+## ตัวอย่างข้อผิดพลาด
+
+```json
+{"error":"Valid server-side API key required","code":"invalid_client","requestId":"server-generated-request-id"}
+```
+
+ใช้ HTTP status + code ในโปรแกรม ไม่จับข้อความ error ที่อาจแปลภาษาได้ requestId มีใน HTTP error ส่วนใหญ่และ X-Request-ID ใช้ติดตาม Audit ได้ อย่าส่ง API key/token มาทาง support
+
+ตรวจ Role จาก `identity.roles` ฝั่ง backend เช่น `approver` ไม่ใช้ platform role แทน Service role และไม่พึ่งการซ่อนปุ่มใน React ตรวจ `active === true`, `aud === SSO_APPLICATION_ID` และ `exp > now` ทุก protected operation ไม่มี JWT ให้ถอดบน browser

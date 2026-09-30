@@ -2,6 +2,8 @@
 
 คู่มือนี้สำหรับ **Plesk บน Linux ที่เปิด Node.js/Passenger** ใช้โดเมนเดียวสำหรับหน้าเว็บและ API สมมติชื่อโดเมน `sso.example.com` และโฟลเดอร์โปรเจกต์ `cusa-sso` ภายใน webspace ของบัญชี hosting
 
+หากใช้โดเมน `sso.reunion.scicu-alumni.com` และอัปเดตรุ่นนี้ ดู [ขั้นตอน Upload ZIP และ Scheduled Tasks บน HostAtom](HOSTATOM-RELEASE.md) มี `deploy:package`, `deploy:check` และคำสั่ง migration ที่ใช้ production build ได้โดยไม่ต้องมี tsx บน Host
+
 ## ค่าที่ใส่ในหน้า Node.js
 
 | ช่องใน Plesk | ค่า |
@@ -113,7 +115,7 @@ npm run db:migrate
 npm run db:bootstrap
 ```
 
-สำหรับระบบเดิม migration `002_service_roles.sql` ต้องเสร็จก่อนใช้ Backend รุ่นนี้ และ Admin ต้องกำหนดสมาชิก/Role ของแต่ละ Service ตาม [คู่มือ Service Access](SERVICE-ACCESS.md)
+สำหรับระบบเดิมต้องรัน migrations ที่ยังไม่มีให้ครบถึง `005_mfa_reset_evidence.sql` ก่อนใช้ Backend รุ่นนี้ และ Admin ต้องกำหนดสมาชิก/Role ของแต่ละ Service ตาม [คู่มือ Service Access](SERVICE-ACCESS.md)
 
 ## เริ่มแอปและตรวจหลัง Deploy
 

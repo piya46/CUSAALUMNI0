@@ -8,6 +8,9 @@ services:
       PORT: 4000
       TRUST_PROXY: "1"
       REDIS_URL: redis://redis:6379
+      MFA_EVIDENCE_DIR: /app/var/mfa-evidence
+    volumes:
+      - mfa_evidence:/app/var/mfa-evidence
     depends_on:
       redis:
         condition: service_healthy
@@ -42,6 +45,9 @@ services:
       - caddy_config:/config
     depends_on: ["app"]
 volumes:
+  # Private evidence and wrapped per-document keys: exclude from backups/snapshots.
+  # Do not run `docker compose down -v` while requests still depend on this data.
+  mfa_evidence:
   redis_data:
   caddy_data:
   caddy_config:

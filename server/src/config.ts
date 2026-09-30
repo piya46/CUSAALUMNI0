@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isIP } from 'node:net';
 import { z } from 'zod';
@@ -12,12 +12,22 @@ const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   APP_ORIGIN: z.url().default('http://localhost:5173'),
   DB_HOST: z.string().default('203.170.190.137'), DB_PORT: z.coerce.number().int().default(3306),
+  DB_SOCKET_PATH: z.string().default('').refine(value => !value || (isAbsolute(value) && !value.includes('\0')), 'DB_SOCKET_PATH must be an absolute Unix socket path'),
   DB_NAME: z.string().default('cusa_identity'), DB_USER: z.string().default(''), DB_PASSWORD: z.string().default(''),
   DB_TLS: z.enum(['true', 'false']).default('true'), DB_CA_FILE: z.string().default(''),
   DB_CONNECTION_LIMIT:z.coerce.number().int().min(1).max(100).default(20),
   DB_QUEUE_LIMIT:z.coerce.number().int().min(1).max(1000).default(100),
   INTROSPECTION_CACHE_SECONDS:z.coerce.number().int().min(0).max(5).default(5),
   MFA_EVIDENCE_KEY:z.string().default(''),
+  PASSKEY_ENABLED:z.enum(['true','false']).default('true'),
+  LINE_MFA_ENABLED:z.enum(['true','false']).default('false'),
+  LINE_LOGIN_CHANNEL_ID:z.string().default(''), LINE_LOGIN_CHANNEL_SECRET:z.string().default(''),
+  LINE_MESSAGING_CHANNEL_SECRET:z.string().default(''), LINE_CHANNEL_ACCESS_TOKEN:z.string().default(''),
+  FIREBASE_PHONE_ENABLED:z.enum(['true','false']).default('false'),
+  FIREBASE_PHONE_REQUIRED:z.enum(['true','false']).default('false'),
+  FIREBASE_PROJECT_ID:z.string().default(''), FIREBASE_API_KEY:z.string().default(''),
+  FIREBASE_AUTH_DOMAIN:z.string().regex(/^$|^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/).default(''), FIREBASE_APP_ID:z.string().default(''),
+  FIREBASE_CLIENT_EMAIL:z.string().default(''), FIREBASE_PRIVATE_KEY:z.string().default(''),
   MFA_EVIDENCE_DIR:z.string().default(fileURLToPath(new URL('../../var/mfa-evidence',import.meta.url))),
   SESSION_SECRET: z.string().default(''), ENCRYPTION_KEY: z.string().default(''),
   GOOGLE_CLIENT_ID: z.string().default(''), GOOGLE_CLIENT_SECRET: z.string().default(''),
@@ -37,6 +47,10 @@ const schema = z.object({
   BOOTSTRAP_ADMIN_EMAIL: z.string().trim().toLowerCase().default(''),
 });
 const env = schema.parse(process.env);
+if (env.LINE_MFA_ENABLED==='true' && ![env.LINE_LOGIN_CHANNEL_ID,env.LINE_LOGIN_CHANNEL_SECRET,env.LINE_MESSAGING_CHANNEL_SECRET,env.LINE_CHANNEL_ACCESS_TOKEN].every(Boolean)) throw new Error('LINE MFA requires both LINE Login and Messaging API credentials');
+if (env.FIREBASE_PHONE_ENABLED==='true' && ![env.FIREBASE_PROJECT_ID,env.FIREBASE_API_KEY,env.FIREBASE_AUTH_DOMAIN,env.FIREBASE_APP_ID,env.FIREBASE_CLIENT_EMAIL,env.FIREBASE_PRIVATE_KEY].every(Boolean)) throw new Error('Firebase phone verification requires web config and a dedicated server service account');
+if (env.FIREBASE_PHONE_REQUIRED==='true' && env.FIREBASE_PHONE_ENABLED!=='true') throw new Error('Required phone verification needs FIREBASE_PHONE_ENABLED=true');
+if (env.NODE_ENV==='production' && process.env.FIREBASE_AUTH_EMULATOR_HOST) throw new Error('Firebase Auth emulator is forbidden in production');
 const origin = new URL(env.APP_ORIGIN);
 if (origin.origin !== env.APP_ORIGIN || origin.hostname.includes(',') || !['http:', 'https:'].includes(origin.protocol)) throw new Error('APP_ORIGIN must be one HTTP(S) origin without a trailing slash or path; do not combine multiple URLs');
 const mailConfigured = env.MAIL_MODE !== 'disabled' && z.email().safeParse(env.GMAIL_SENDER).success && (env.MAIL_MODE === 'gmail_oauth' ? Boolean(env.GMAIL_REFRESH_TOKEN && (env.GMAIL_CLIENT_ID || env.GOOGLE_CLIENT_ID) && (env.GMAIL_CLIENT_SECRET || env.GOOGLE_CLIENT_SECRET)) : Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY));
@@ -49,12 +63,19 @@ if (env.INSTALL_ENABLED === 'true' && (!/^[A-Za-z0-9_-]{43}$/.test(env.INSTALL_T
 export function assertServerConfiguration() {
   if (env.NODE_ENV !== 'production') return;
   if (!configured || origin.protocol !== 'https:') throw new Error('Production requires complete credentials, HTTPS APP_ORIGIN, 32-byte ENCRYPTION_KEY, and SESSION_SECRET >=32 characters');
-  if (env.DB_TLS !== 'true' && !permitsUnencryptedDatabase(env.DB_HOST)) throw new Error('Production DB_TLS=false requires localhost, a loopback IP, or a private IP on a trusted internal network; use verified TLS for public database endpoints');
+  if (!env.DB_SOCKET_PATH && env.DB_TLS !== 'true' && !permitsUnencryptedDatabase(env.DB_HOST)) throw new Error('Production DB_TLS=false requires localhost, a loopback IP, or a private IP on a trusted internal network; use verified TLS for public database endpoints');
 }
 export const config = {
+  passkeyEnabled:env.PASSKEY_ENABLED==='true',lineMfaEnabled:env.LINE_MFA_ENABLED==='true',
+  lineLoginChannelId:env.LINE_LOGIN_CHANNEL_ID,lineLoginChannelSecret:env.LINE_LOGIN_CHANNEL_SECRET,
+  lineMessagingChannelSecret:env.LINE_MESSAGING_CHANNEL_SECRET,lineChannelAccessToken:env.LINE_CHANNEL_ACCESS_TOKEN,
+  firebasePhoneEnabled:env.FIREBASE_PHONE_ENABLED==='true',firebasePhoneRequired:env.FIREBASE_PHONE_REQUIRED==='true',
+  firebaseProjectId:env.FIREBASE_PROJECT_ID,firebaseApiKey:env.FIREBASE_API_KEY,firebaseAuthDomain:env.FIREBASE_AUTH_DOMAIN,firebaseAppId:env.FIREBASE_APP_ID,
+  firebaseClientEmail:env.FIREBASE_CLIENT_EMAIL,firebasePrivateKey:env.FIREBASE_PRIVATE_KEY.replace(/\\n/g,'\n'),
   mfaEvidenceKey:env.MFA_EVIDENCE_KEY,mfaEvidenceDir:resolve(fileURLToPath(new URL('../../',import.meta.url)),env.MFA_EVIDENCE_DIR),
   nodeEnv: env.NODE_ENV, port: env.PORT, appOrigin: env.APP_ORIGIN,
   dbHost: env.DB_HOST, dbPort: env.DB_PORT, dbName: env.DB_NAME, dbUser: env.DB_USER, dbPassword: env.DB_PASSWORD, dbTls: env.DB_TLS === 'true', dbCaFile: env.DB_CA_FILE,
+  dbSocketPath: env.DB_SOCKET_PATH,
   sessionSecret: env.SESSION_SECRET, encryptionKey: env.ENCRYPTION_KEY,
   googleClientId: env.GOOGLE_CLIENT_ID, googleClientSecret: env.GOOGLE_CLIENT_SECRET,
   mailMode: env.MAIL_MODE, gmailSender: env.GMAIL_SENDER, gmailRefreshToken: env.GMAIL_REFRESH_TOKEN,

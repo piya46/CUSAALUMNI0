@@ -1,3 +1,4 @@
+import { ExtraMfa } from './AdditionalFactors';
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { ArrowRight, CircleAlert, Globe2, LockKeyhole, Mail, RefreshCw } from 'lucide-react';
@@ -58,6 +59,7 @@ export function Mfa({ identity, context, onVerified, onLogout }: { identity: Ide
     {!isTotp && <><button className="button secondary full-width" disabled={busy||remaining>0} onClick={send}><Mail size={16} />{remaining>0?`ส่งใหม่ได้ใน ${remaining} วินาที`:sent ? 'ส่งรหัสอีกครั้ง' : 'ส่งรหัสไปยังอีเมล'}</button>{sent && <p className="auth-success" role="status">ส่งรหัสแล้ว กรุณาตรวจสอบกล่องจดหมายและสแปม</p>}</>}
     {!isTotp&&otp?.reference&&<p className="otp-reference">Ref: <strong>{otp.reference}</strong><br/>ใช้รหัสจากอีเมลที่มี Ref ตรงกัน</p>}
     <form onSubmit={verify}>{recovery?<label className="field">{recovery ? 'Recovery code' : 'รหัสยืนยัน'}<input className={recovery ? '' : 'auth-otp'} inputMode={recovery ? 'text' : 'numeric'} autoComplete="one-time-code" pattern={recovery ? undefined : '[0-9]{6}'} maxLength={recovery ? 64 : 6} placeholder={recovery ? 'Recovery code' : '000000'} value={code} onChange={e => setCode(recovery ? e.target.value : e.target.value.replace(/\D/g, ''))} required autoFocus /></label>:<OtpInput value={code} onChange={setCode} autoFocus disabled={busy}/>}<button className="button primary full-width" disabled={busy || (recovery ? !code.trim() : code.length !== 6)||(!isTotp&&!otp?.reference)}>{busy ? 'กำลังตรวจสอบ…' : 'ยืนยันและเข้าสู่ระบบ'}<ArrowRight size={16} /></button></form>
+    <ExtraMfa identity={identity} onVerified={onVerified}/>
     {isTotp && <button className="auth-text-button" disabled={busy} onClick={() => { setRecovery(!recovery); setCode(''); setError(''); }}>{recovery ? 'ใช้รหัสจาก Authenticator' : 'ใช้ Recovery code'}</button>}
     {isTotp&&<><button className="auth-text-button" onClick={()=>setReset(!reset)}>{reset?'ปิดคำขอเปลี่ยน MFA':'ไม่มีเครื่องเดิมและ Recovery code'}</button>{reset&&<MfaResetRequest/>}</>}
     <button className="auth-text-button" onClick={() => void onLogout()} disabled={busy}>ใช้บัญชีอื่น</button><p className="auth-note"><LockKeyhole size={13} />ห้ามแชร์รหัสยืนยันให้ผู้อื่น</p>

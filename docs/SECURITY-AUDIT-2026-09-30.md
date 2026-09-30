@@ -130,3 +130,23 @@ HMAC-SHA-256 สำหรับ token/API key ที่สุ่ม entropy ส�
 - ไม่ได้รัน MariaDB integration, production load, dependency advisory scan, ตรวจ TLS/GRANT/monitoring ของ Host หรือทดสอบ Google/Gmail สดในรอบนี้
 
 ลำดับทำงานที่เสนอ: ยืนยัน IP/DB grants บน Host → แก้ Rate Limit → เพิ่ม Admin MFA/step-up → เติม Audit context/reasons → ตั้ง monitoring/backup → ปรับ introspection และ Audit search จากผลวัดจริง
+
+
+## ผลการแก้ไขตามรายงาน — 30 กันยายน 2569
+
+ข้อความด้านบนเป็นข้อค้นพบก่อนแก้ไข ไม่ใช่สถานะปัจจุบันของทุกไฟล์ การแก้ไขรอบนี้ครอบคลุม:
+
+| ประเด็น | ผลในโค้ด / เงื่อนไขภายนอก |
+| --- | --- |
+| IP / proxy | เพิ่ม client/peer/source/request ID, CIDR trust validation และ spoof tests; ต้องยืนยัน header chain บน HostAtom |
+| โควตา machine API | แยกจาก browser, ตรวจ key/scope ก่อน quota ตาม Application/key และก่อน cache |
+| สิทธิ์ Admin | บังคับ TOTP, enrollment gate, fresh MFA ภายใน 5 นาทีสำหรับ writes และ private evidence |
+| introspection performance | SELECT identity เดียว, ไม่มี row-lock/write last_used_at; คง cache/expiry/audience isolation |
+| Audit evidence | บันทึก failed MFA ใน transaction, redaction, before/after, search/export evidence และ actor context |
+| Operations | fail-closed เมื่อ worker/backlog ผิดปกติ, read-only ops check; ต้องตั้ง alert/scheduler บน Host |
+| Pagination | audit keyset/time bound ไม่มี COUNT/OFFSET; MFA recovery queue ใช้ keyset ด้วย |
+| DB privileges | เพิ่ม runtime-grants.sql และทดสอบบัญชีจำลองว่า INSERT audit ได้แต่ UPDATE/DELETE ไม่ได้; ยังไม่เปลี่ยน grants บน Host |
+
+เพิ่ม OTP 6 ช่อง/Ref/cooldown 60 วินาที, email CUSA SSO พร้อมวัตถุประสงค์, public homepage/branding assets, API reference/OpenAPI/BFF และกระบวนการขอรีเซ็ต MFA พร้อม encrypted evidence ตาม [คู่มืออัปเกรด](SECURITY-UPGRADE.md) และ [คู่มือ MFA](MFA-RESET.md)
+
+ดู [บันทึกทดสอบ](VALIDATION.md) สำหรับจำนวนและขอบเขตจริง การทดสอบในเครื่องไม่แทนการตรวจ penetration/load, ประเมินฐานกฎหมายของเอกสาร, Google branding approval, backup exclusions หรือการตรวจ host/proxy/DB grants จริง งาน WebAuthn, key rotation tooling, idle session, external immutable archive ยังคงเป็นงานเพิ่มเติมตามลำดับความเสี่ยง ไม่ใช่ฟีเจอร์ที่รอบนี้ได้ติดตั้งแล้ว

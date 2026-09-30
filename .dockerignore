@@ -9,3 +9,13 @@ node_modules
 *service-account*.json
 test-results
 playwright-report
+var
+**/var
+releases
+**/*.enc
+**/*.key
+**/*.pem
+**/.env
+**/.env.*
+**/*service-account*.json
+docs/previews

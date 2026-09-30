@@ -1,0 +1,94 @@
+import { useEffect, useId, useRef, useState } from 'react';
+import { Fingerprint, MessageCircle, Smartphone } from 'lucide-react';
+import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
+import type { ConfirmationResult, RecaptchaVerifier } from 'firebase/auth';
+import { api, ApiError } from '../models/api';
+import { OtpInput } from '../components/OtpInput';
+import { Panel } from '../components/ui';
+import type { Identity } from '../models/types';
+import './additional-factors.css';
+interface Settings {passkeyEnabled:boolean;lineEnabled:boolean;phoneEnabled:boolean;line:boolean;phoneVerified:boolean;passkeys:{id:string;name:string}[];firebase?:{apiKey:string;authDomain:string;projectId:string;appId:string}}
+
+export function AdditionalFactors({identity}:{identity:Identity}){
+  const [settings,setSettings]=useState<Settings|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[name,setName]=useState('Passkey ของฉัน'),[notice,setNotice]=useState('');
+  const refresh=()=>api<Settings>('/auth/factors').then(setSettings);
+  useEffect(()=>{void refresh().catch(e=>setError(e.message));const state=new URLSearchParams(location.search).get('line');if(state){setNotice(state==='linked'?'ผูก LINE แล้ว กรุณาเพิ่มเพื่อน Official Account เพื่อรับข้อความ':'ผูก LINE ไม่สำเร็จ กรุณาเริ่มใหม่');const url=new URL(location.href);url.searchParams.delete('line');history.replaceState(null,'',url.pathname+url.search+url.hash);}},[]);
+  async function work(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  const canManage=identity.user.totpEnabled&&identity.mfaMethod!=='recovery';
+  async function register(){
+    const {startRegistration}=await import('@simplewebauthn/browser');
+    const result=await api<{challengeId:string;options:PublicKeyCredentialCreationOptionsJSON}>('/auth/passkeys/register/options','POST',{});
+    const response=await startRegistration({optionsJSON:result.options});
+    await api('/auth/passkeys/register/verify','POST',{challengeId:result.challengeId,response,name});setNotice('เพิ่ม Passkey แล้ว ใช้ได้ในขั้นตอน MFA หลังเข้าสู่ระบบด้วย Google');
+  }
+  return <Panel title="วิธียืนยันเพิ่มเติม" subtitle="Google, Authenticator และ Recovery codes เดิมยังใช้งานได้"><div className="additional-factors">
+    {error&&<p role="alert" className="inline-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
+    {!canManage&&<p className="field-hint">เปิด Authenticator และเก็บ Recovery codes ก่อนเพิ่ม Passkeys หรือ LINE</p>}
+    {settings?.passkeyEnabled&&<section><h3><Fingerprint size={22}/>Passkeys</h3><p>ใช้การปลดล็อกอุปกรณ์ เช่น ใบหน้า ลายนิ้วมือ หรือ PIN ระบบเก็บเฉพาะกุญแจสาธารณะ ไม่รับข้อมูลชีวมิติ</p>
+      <form onSubmit={e=>{e.preventDefault();void work(register);}}><label className="field">ชื่ออุปกรณ์<input value={name} onChange={e=>setName(e.target.value)} maxLength={80} required disabled={!canManage||busy}/></label><button className="button secondary" disabled={!canManage||busy}>เพิ่ม Passkey</button></form>
+      {settings.passkeys.map(key=><div className="factor-item" key={key.id}><span>{key.name}</span><button className="text-link" disabled={!canManage||busy} onClick={()=>{if(window.confirm(`ลบ Passkey ${key.name} และออกจากระบบอุปกรณ์อื่น?`))void work(async()=>{await api(`/auth/passkeys/${key.id}`,'DELETE');});}}>ลบ Passkey</button></div>)}</section>}
+    <section><h3><MessageCircle size={22}/>LINE Number Matching</h3><p>เลือกเลขใน LINE ให้ตรงกับหน้าจอ CUSA SSO เฉพาะเมื่อคุณเริ่มเข้าสู่ระบบด้วยตัวเอง</p>{settings?.lineEnabled?<button className="button secondary" disabled={!canManage||busy} onClick={()=>void work(async()=>{
+      if(settings.line){if(!window.confirm('ถอด LINE และออกจากระบบอุปกรณ์อื่น?'))return;await api('/auth/line/link','DELETE');setNotice('ถอดการผูก LINE แล้ว');}
+      else{const {url}=await api<{url:string}>('/auth/line/link','POST',{});window.location.assign(url);}
+    })}>{settings.line?'ถอดการผูก LINE':'ผูกบัญชี LINE'}</button>:<p className="field-hint">ผู้ดูแลยังไม่เปิดใช้งาน LINE</p>}</section>
+    {settings?.phoneEnabled&&<section><h3><Smartphone size={22}/>ยืนยันเบอร์มือถือ</h3>{settings.phoneVerified?<p>ยืนยันเบอร์แล้ว · ใช้สำหรับยืนยันเบอร์ครั้งแรก ไม่ใช้แทน MFA</p>:<PhoneVerification settings={settings} onVerified={refresh}/>}</section>}
+    {identity.user.role==='admin'&&<p className="field-hint">การจัดการระบบของ Admin ยังคงต้องยืนยัน Authenticator</p>}
+  </div></Panel>;
+}
+
+export function ExtraMfa({identity,onVerified}:{identity:Identity;onVerified:()=>Promise<void>}){
+  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[line,setLine]=useState<{challengeId:string;number:string;expiresIn:number}|null>(null),[deadline,setDeadline]=useState(0),[now,setNow]=useState(Date.now());
+  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
+  const remaining=Math.max(0,Math.ceil((deadline-now)/1000));
+  useEffect(()=>{
+    if(!line)return;let alive=true,working=false;
+    const timer=setInterval(async()=>{if(working||!alive)return;working=true;try{
+      const state=await api<{status:string}>(`/auth/line/challenges/${line.challengeId}`);
+      if(!alive)return;
+      if(state.status==='approved'){clearInterval(timer);setBusy(true);await api('/auth/line/verify','POST',{challengeId:line.challengeId});await onVerified();}
+      if(['denied','expired','used'].includes(state.status)){clearInterval(timer);setLine(null);setError(state.status==='denied'?'คำขอ LINE ถูกปฏิเสธ กรุณาเริ่มใหม่':'คำขอ LINE หมดอายุหรือใช้แล้ว');}
+    }catch(e){if(alive){clearInterval(timer);setError((e as Error).message);setLine(null);}}finally{working=false;if(alive)setBusy(false);}},2500);
+    return()=>{alive=false;clearInterval(timer);};
+  },[line]);
+  async function act(action:()=>Promise<void>){setBusy(true);setError('');try{await action();}catch(e){setError((e as Error).message);if(e instanceof ApiError&&e.retryAfter)setDeadline(Date.now()+e.retryAfter*1000);}finally{setBusy(false);}}
+  if(!identity.factors?.passkey&&!identity.factors?.line)return null;
+  return <div className="extra-mfa"><p>หรือใช้วิธียืนยันที่ผูกไว้</p>{error&&<p className="inline-error" role="alert">{error}</p>}
+    {identity.factors.passkey&&<button className="button secondary full-width" disabled={busy} onClick={()=>void act(async()=>{
+      const {startAuthentication}=await import('@simplewebauthn/browser');
+      const result=await api<{challengeId:string;options:PublicKeyCredentialRequestOptionsJSON}>('/auth/passkeys/authenticate/options','POST',{});
+      const response=await startAuthentication({optionsJSON:result.options});await api('/auth/passkeys/authenticate/verify','POST',{challengeId:result.challengeId,response});await onVerified();
+    })}><Fingerprint size={18}/>ยืนยันด้วย Passkey</button>}
+    {identity.factors.line&&<button className="button secondary full-width" disabled={busy||remaining>0} onClick={()=>void act(async()=>{const result=await api<{challengeId:string;number:string;expiresIn:number;retryAfter:number}>('/auth/line/send','POST',{});setLine(result);setDeadline(Date.now()+result.retryAfter*1000);})}><MessageCircle size={18}/>{remaining?`ขอ LINE ใหม่ได้ใน ${remaining} วินาที`:'ยืนยันผ่าน LINE'}</button>}
+    {line&&<div className="number-matching" role="status"><p>เปิด LINE แล้วเลือกเลขนี้</p><strong>{line.number}</strong><small>ใช้สำหรับเข้าสู่ระบบ CUSA SSO · หมดอายุใน 3 นาที<br/>ห้ามบอกเลขให้ผู้อื่นหรืออนุมัติคำขอที่คุณไม่ได้เริ่ม</small></div>}
+  </div>;
+}
+
+export function PhoneVerification({settings,onVerified}:{settings:Settings;onVerified:()=>Promise<unknown>}){
+  const [phone,setPhone]=useState(''),[code,setCode]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[deadline,setDeadline]=useState(0),[now,setNow]=useState(Date.now()),[sent,setSent]=useState(false),[consent,setConsent]=useState(false);
+  const challenge=useRef(''),confirmation=useRef<ConfirmationResult|null>(null),captcha=useRef<RecaptchaVerifier|null>(null),cleanupAuth=useRef<(()=>Promise<void>)|null>(null);
+  const captchaId=`phone-captcha-${useId().replace(/[^a-zA-Z0-9]/g,'')}`;
+  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>{clearInterval(timer);captcha.current?.clear();void cleanupAuth.current?.();confirmation.current=null;};},[]);
+  const remaining=Math.max(0,Math.ceil((deadline-now)/1000));
+  async function send(){setBusy(true);setError('');try{
+    const [{initializeApp,getApps},{initializeAuth,getAuth,inMemoryPersistence,RecaptchaVerifier,signInWithPhoneNumber,signOut}]=await Promise.all([import('firebase/app'),import('firebase/auth')]);
+    const existing=getApps().find(a=>a.name==='cusa-phone');const app=existing??initializeApp(settings.firebase!,'cusa-phone');
+    const auth=existing?getAuth(app):initializeAuth(app,{persistence:inMemoryPersistence});auth.languageCode='th';cleanupAuth.current=()=>signOut(auth);
+    await signOut(auth);
+    const result=await api<{challengeId:string;retryAfter:number}>('/auth/phone/start','POST',{phone});challenge.current=result.challengeId;setDeadline(Date.now()+result.retryAfter*1000);confirmation.current=null;setSent(false);
+    captcha.current?.clear();captcha.current=new RecaptchaVerifier(auth,captchaId,{size:'normal'});
+    confirmation.current=await signInWithPhoneNumber(auth,phone,captcha.current);setSent(true);setCode('');
+  }catch(e){setError(e instanceof ApiError?e.message:'ส่ง SMS ไม่สำเร็จ กรุณาตรวจสอบเบอร์และ reCAPTCHA หรือติดต่อผู้ดูแล');if(e instanceof ApiError&&e.retryAfter)setDeadline(Date.now()+e.retryAfter*1000);captcha.current?.clear();captcha.current=null;}finally{setBusy(false);}}
+  async function verify(){setBusy(true);setError('');try{if(!confirmation.current)throw new Error();const result=await confirmation.current.confirm(code);const idToken=await result.user.getIdToken();await api('/auth/phone/verify','POST',{challengeId:challenge.current,idToken});await cleanupAuth.current?.();confirmation.current=null;await onVerified();}catch(e){setError(e instanceof ApiError?e.message:'รหัส SMS ไม่ถูกต้องหรือหมดอายุ');}finally{setBusy(false);}}
+  return <div className="phone-verification"><p>ยืนยันการถือครองเบอร์ครั้งแรก ไม่ใช่การตรวจบัตรประชาชน และไม่ใช้ SMS แทน MFA</p>
+    <label className="field">เบอร์มือถือพร้อมรหัสประเทศ<input type="tel" value={phone} placeholder="+66812345678" onChange={e=>{setPhone(e.target.value.replace(/[\s-]/g,''));setSent(false);confirmation.current=null;}} disabled={busy} autoComplete="tel"/></label>
+    <label className="checkbox-row"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} disabled={busy}/><span>ฉันได้อ่าน<a href="/privacy" target="_blank" rel="noopener noreferrer">นโยบายความเป็นส่วนตัว</a> และยินยอมให้ส่งเบอร์ไปยัง Google/Firebase เพื่อรับ SMS และป้องกันการใช้งานผิดวัตถุประสงค์</span></label>
+    {error&&<p className="inline-error" role="alert">{error}</p>}<div id={captchaId}/>
+    <button className="button secondary" disabled={busy||remaining>0||!consent||!/^\+[1-9]\d{7,14}$/.test(phone)} onClick={()=>void send()}>{remaining?`ส่งใหม่ได้ใน ${remaining} วินาที`:'ส่ง SMS ยืนยันเบอร์'}</button>
+    {sent&&<form onSubmit={e=>{e.preventDefault();void verify();}}><p role="status">ส่ง SMS แล้ว กรุณากรอกภายใน 3 นาที</p><OtpInput label="รหัส SMS 6 หลัก" value={code} onChange={setCode} disabled={busy}/><button className="button primary" disabled={busy||code.length!==6}>ยืนยันเบอร์มือถือ</button></form>}
+  </div>;
+}
+export function PhoneGate({onVerified,onLogout}:{onVerified:()=>Promise<void>;onLogout:()=>Promise<void>}){
+  const [settings,setSettings]=useState<Settings|null>(null),[error,setError]=useState('');
+  useEffect(()=>{void api<Settings>('/auth/factors').then(setSettings).catch(e=>setError(e.message));},[]);
+  return <div className="auth-page"><main className="auth-main"><section className="auth-card"><h1>ยืนยันเบอร์มือถือครั้งแรก</h1><p>CUSA SSO · ยืนยันก่อนเริ่มใช้งาน</p>{error&&<p role="alert">{error}</p>}{settings?.phoneEnabled?<PhoneVerification settings={settings} onVerified={onVerified}/>:<p>กำลังตรวจสอบบริการ SMS หากไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล</p>}<button className="auth-text-button" onClick={()=>void onLogout()}>ออกจากระบบ</button></section></main></div>;
+}

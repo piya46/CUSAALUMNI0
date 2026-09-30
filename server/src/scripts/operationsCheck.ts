@@ -10,6 +10,7 @@ try {
   const protectedTables=['audit_logs','installation_state','schema_migrations'];
   const issues:string[]=[];
   for(const row of grants)for(const grant of Object.values(row)) {
+    if(/\bWITH GRANT OPTION\b/i.test(grant))issues.push('Runtime must not delegate database privileges');
     const match=grant.match(/^GRANT (.+) ON (.+) TO /i);
     if(!match) {if(/^GRANT /i.test(grant))issues.push('Role grants require DBA review');continue;}
     const scope=match[2].replaceAll('`','');const privileges=match[1].split(',').map(p=>p.trim().toUpperCase());

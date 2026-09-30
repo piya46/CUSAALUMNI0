@@ -113,6 +113,10 @@ TOTP และ OTP policy อ้างอิงแนวทาง [OWASP Passwor
 
 ## SSO, cache และ audit
 
+รอบ Security / OTP / MFA recovery: อ่าน [ขั้นตอนอัปเกรด](docs/SECURITY-UPGRADE.md) ก่อน deploy ฐานเดิม ต้องรัน migration 004–005 โดยไม่เปิด installer ซ้ำ ใช้ [API reference](docs/SSO-INTEGRATION.md), [OpenAPI 3.1](web/public/openapi.json) และ [ขั้นตอนกู้คืน MFA พร้อมหลักฐาน](docs/MFA-RESET.md) สำหรับการตั้งค่าใหม่
+
+หน้า MFA รับคำขอจากเจ้าของบัญชีที่ผ่าน Google Login ผู้ดูแลต้องยืนยัน TOTP ใหม่ก่อนเปิดภาพ/อนุมัติ ภาพถูกใส่ลายน้ำและเข้ารหัสด้วย `MFA_EVIDENCE_KEY` แยกต่างหาก เก็บนอก public และลบภายใน 7 วันหลังตัดสินใจ ต้องตั้ง Scheduled Task และยกเว้น directory นี้จาก backup/snapshot ตามคู่มือก่อนรับเอกสารจริง
+
 อ่าน [คู่มือเชื่อมต่อ SSO](docs/SSO-INTEGRATION.md) และ [คู่มือ Audit](docs/AUDIT-OPERATIONS.md) สำหรับ BFF, PKCE, introspection, CORS และ archive
 
 API นี้เป็น SSO สำหรับแอปที่ admin อนุมัติ โดยใช้ `X-API-Key` เพื่อยืนยัน backend ของแอป **ยังไม่ใช่ OpenID Connect Provider ที่ผ่านการรับรอง** ไม่มี OIDC discovery, ID token หรือ refresh token ระบบลูกต้องเริ่ม authorization ใหม่หลัง access token 5 นาทีหมดอายุ (ใช้ session SSO ที่มีอยู่ได้)
@@ -124,6 +128,8 @@ Pool ค่าเริ่มต้น 20 connections/instance, bounded queue 10
 Audit เก็บ success/failure, actor snapshot, session record ID (ไม่ใช่ cookie credential), IP และ user agent คำขอรอการ enqueue ถาวร แล้ว worker ย้ายไป append-only logs แบบ transaction; ไม่ทิ้ง Promise แบบ fire-and-forget `/api/ready` ตรวจ DB และ backlog ของ audit ใช้ archive แยก credential และตรวจ checksum ก่อนวางแผน retention ขณะนี้ไม่มีการลบ audit อัตโนมัติหรือ hash chain
 
 ## Build, test, deploy
+
+สำหรับการอัปโหลดไป HostAtom ใช้ `npm run deploy:package` เพื่อสร้าง ZIP พร้อม production build ใน `releases/` โดยไม่รวม `.env`, node_modules หรือหลักฐานส่วนตัว บน Host ใช้ `npm run deploy:check` ตรวจค่าก่อนเปิดเว็บ และ `npm run db:migrate:production` สำหรับ migration โดยไม่ต้องติดตั้ง dev dependencies ดู [คู่มือ HostAtom](docs/HOSTATOM-RELEASE.md) รวมการตั้งงานลบหลักฐาน/ตรวจสุขภาพบน Plesk
 
 ถ้าใช้ Plesk บน Linux ให้ดู [คู่มือตั้งค่า Plesk](docs/PLESK.md): ใช้ Application Root ของโปรเจกต์, Document Root เป็น `public` ว่าง และ Startup File `app.cjs` เพื่อให้ Node.js ส่งหน้า React พร้อม Security Headers
 

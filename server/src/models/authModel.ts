@@ -1,3 +1,4 @@
+import { clearAdditionalFactors } from './factorModel.js';
 import { randomUUID } from 'node:crypto';
 import type { PoolConnection } from 'mysql2/promise';
 import { query, execute, transaction } from '../db.js';
@@ -8,10 +9,10 @@ import type { Identity } from '../types.js';
 
 type Row = Record<string, any>;
 export type AuthAudit=(conn:PoolConnection,event:string,target?:string,metadata?:unknown)=>Promise<void>;
-const sessionSelect = `SELECT s.*, u.email,COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.name) AS name,u.first_name,u.last_name,u.avatar,u.totp_secret,a.role FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL`;
+const sessionSelect = `SELECT s.*, u.email,COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.name) AS name,u.first_name,u.last_name,u.avatar,u.totp_secret,u.phone_required,EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id) AS phone_verified,a.role FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL`;
 export async function findSession(token: string): Promise<Identity | undefined> {
   const [s] = await query<Row>(sessionSelect, [hashToken(token)]);
-  return s && { sessionId: s.id, userId: s.user_id, email: s.email, name: s.name, firstName: s.first_name, lastName: s.last_name, avatar: s.avatar, role: s.role, kind: s.kind, csrfToken: s.csrf_token, totpEnabled: Boolean(s.totp_secret), mfaMethod: s.mfa_method, authenticatedAt: s.authenticated_at };
+  return s && { sessionId: s.id, userId: s.user_id, email: s.email, name: s.name, firstName: s.first_name, lastName: s.last_name, avatar: s.avatar, role: s.role, kind: s.kind, csrfToken: s.csrf_token, phoneRequired: Boolean(s.phone_required && !s.phone_verified), totpEnabled: Boolean(s.totp_secret), mfaMethod: s.mfa_method, authenticatedAt: s.authenticated_at };
 }
 export function redactAudit(value: unknown,depth=0):unknown {
   if(depth>6) return '[truncated]';
@@ -51,7 +52,7 @@ export async function startGoogleSession(profile: { sub: string; email: string; 
     if (collision) return null;
     if (!user) {
       user = { id: randomUUID() };
-      await execute('INSERT INTO users (id,google_sub,email,name,avatar,first_name,last_name) VALUES (?,?,?,?,?,?,?)', [user.id,profile.sub,profile.email,profile.name,profile.avatar,profile.firstName ?? '',profile.lastName ?? ''], conn);
+      await execute('INSERT INTO users (id,google_sub,email,name,avatar,first_name,last_name,phone_required) VALUES (?,?,?,?,?,?,?,?)', [user.id,profile.sub,profile.email,profile.name,profile.avatar,profile.firstName ?? '',profile.lastName ?? '',config.firebasePhoneRequired], conn);
     } else {
       if (user.email !== profile.email) await execute('DELETE FROM sessions WHERE user_id=?', [user.id], conn);
       await execute('UPDATE users SET email=?,name=?,avatar=? WHERE id=?', [profile.email,profile.name,profile.avatar,user.id], conn);
@@ -99,7 +100,7 @@ export async function createOtp(sessionId: string, code: string,record?:AuthAudi
   });
 }
 export async function discardOtp(id: string) { await execute('DELETE FROM otp_challenges WHERE id=?', [id]); }
-async function promote(sessionId: string, userId: string, method: string, conn: PoolConnection,record?:AuthAudit) {
+export async function promote(sessionId: string, userId: string, method: string, conn: PoolConnection,record?:AuthAudit) {
   const token = randomToken();
   await execute('UPDATE sessions SET kind=\'full\',token_hash=?,csrf_token=?,mfa_method=?,authenticated_at=UTC_TIMESTAMP(3),expires_at=DATE_ADD(UTC_TIMESTAMP(3),INTERVAL ? HOUR) WHERE id=?', [hashToken(token),randomToken(),method,config.sessionHours,sessionId], conn);
   await execute('UPDATE users SET last_login_at=UTC_TIMESTAMP(3),mfa_failed_attempts=0,mfa_locked_until=NULL WHERE id=?', [userId], conn);
@@ -108,7 +109,7 @@ async function promote(sessionId: string, userId: string, method: string, conn: 
   await record?.(conn,`auth.${method}.success`,userId);
   return token;
 }
-async function failure(userId:string,conn:PoolConnection,record?:AuthAudit) {
+export async function failure(userId:string,conn:PoolConnection,record?:AuthAudit) {
   await execute('UPDATE users SET mfa_failed_attempts=IF(mfa_locked_until IS NOT NULL AND mfa_locked_until<=UTC_TIMESTAMP(3),1,mfa_failed_attempts+1),mfa_locked_until=IF(mfa_failed_attempts>=5,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 15 MINUTE),NULL) WHERE id=?',[userId],conn);
   await record?.(conn,'auth.mfa.failure',userId,{failure_reason:'INVALID_OR_EXPIRED_CODE'});
 }
@@ -139,6 +140,7 @@ export async function verifyTotp(sessionId: string, code: string, action: 'login
     const step = totpStep(s.email,unseal(s.totp_secret),code);
     if (step === null || (s.totp_last_step !== null && step <= Number(s.totp_last_step))) { await failure(s.user_id,conn,record); return null; }
     if (action === 'disable') {
+      await clearAdditionalFactors(s.user_id,conn);
       await execute('UPDATE users SET totp_secret=NULL,totp_last_step=NULL WHERE id=?', [s.user_id], conn);
       await execute('DELETE FROM sessions WHERE user_id=? AND id<>?', [s.user_id,sessionId], conn);
       await execute('DELETE FROM mfa_enrollments WHERE session_id=?', [sessionId], conn);
@@ -173,6 +175,7 @@ export async function enableTotp(sessionId: string, code: string,record?:AuthAud
     if (!enroll) return false;
     const step = totpStep(s.email,unseal(enroll.secret),code);
     if (step === null) { await failure(s.user_id,conn,record); return false; }
+    await clearAdditionalFactors(s.user_id,conn);
     await execute('UPDATE users SET totp_secret=?,totp_last_step=?,mfa_failed_attempts=0,mfa_locked_until=NULL WHERE id=?', [enroll.secret,step,s.user_id], conn);
     await execute('DELETE FROM mfa_recovery_codes WHERE user_id=?', [s.user_id], conn);
     const hashes: string[] = typeof enroll.recovery_hashes === 'string' ? JSON.parse(enroll.recovery_hashes) : enroll.recovery_hashes;

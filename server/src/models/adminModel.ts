@@ -197,6 +197,19 @@ export async function removeUser(actor: Actor, id: string, audit: AuditWriter) {
   });
 }
 
+export async function revokeUserSessions(actor: Actor, id: string, audit: AuditWriter) {
+  return transaction(async connection => {
+    await lockAdministrators(actor, connection);
+    const [user] = await query<{ id: string }>('SELECT id FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE', [id], connection);
+    if (!user) throw new HttpError(404, 'ไม่พบผู้ใช้', 'NOT_FOUND');
+    const tokens = await execute('UPDATE access_tokens SET revoked_at=UTC_TIMESTAMP(3) WHERE user_id=? AND revoked_at IS NULL', [id], connection);
+    await execute('DELETE FROM authorization_codes WHERE user_id=?', [id], connection);
+    const sessions = await execute('DELETE FROM sessions WHERE user_id=?', [id], connection);
+    await audit(connection, 'user.sessions.revoked', id, { sessions: sessions.affectedRows, accessTokens: tokens.affectedRows });
+    return { sessions: sessions.affectedRows };
+  });
+}
+
 export async function addApplication(actor: Actor, data: { name: string; description: string; redirectUri: string }, audit: AuditWriter) {
   return transaction(async connection => {
     await lockAdministrators(actor, connection);

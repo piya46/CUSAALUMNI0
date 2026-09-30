@@ -14,7 +14,7 @@ const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024
 }).single('evidence');
 export const evidenceUpload:RequestHandler=(req,res,next)=>upload(req,res,error=>{
   if(error){req.file?.buffer.fill(0);req.releaseEvidenceCapacity?.();}
-  else if(req.destroyed&&!req.complete){req.file?.buffer.fill(0);req.releaseEvidenceCapacity?.();return;}
+  else if(res.destroyed){req.file?.buffer.fill(0);req.releaseEvidenceCapacity?.();return;}
   else req.evidenceProcessing=true;
   if(error instanceof multer.MulterError)return next(new HttpError(error.code==='LIMIT_FILE_SIZE'?413:400,'ภาพต้องเป็น JPEG/PNG ไม่เกิน 5 MB และแนบได้ครั้งละ 1 ไฟล์','UPLOAD_LIMIT'));
   next(error);

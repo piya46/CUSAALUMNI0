@@ -6,5 +6,5 @@ export default defineConfig({
   reporter:'list',use:{baseURL:'http://127.0.0.1:4188',viewport:{width:1440,height:1000},screenshot:'only-on-failure',
     launchOptions:existsSync(localChrome)?{executablePath:localChrome}:{}},
   webServer:{command:'node server/dist/index.js',url:'http://127.0.0.1:4188',reuseExistingServer:false,timeout:30000,
-    env:{NODE_ENV:'development',PORT:'4188',APP_ORIGIN:'http://127.0.0.1:4188',GOOGLE_CLIENT_ID:'',GOOGLE_CLIENT_SECRET:'',DB_USER:'',DB_PASSWORD:'',MAIL_MODE:'disabled'}},
+    env:{NODE_ENV:'development',PORT:'4188',APP_ORIGIN:'http://127.0.0.1:4188',GOOGLE_CLIENT_ID:'',GOOGLE_CLIENT_SECRET:'',DB_USER:'',DB_PASSWORD:'',MAIL_MODE:'disabled',MFA_EVIDENCE_KEY:'',MFA_EVIDENCE_DIR:'/private/tmp/cusa-browser-unused'}},
 });

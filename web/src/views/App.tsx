@@ -1,3 +1,4 @@
+import { PhoneGate } from './AdditionalFactors';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowRight, ChevronDown, ChevronRight, CircleHelp, Download, Fingerprint, LoaderCircle, LockKeyhole, LogOut, Menu, Plus, RefreshCw, ShieldCheck, Sparkles, X } from 'lucide-react';
@@ -40,7 +41,7 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const accessDenied = new URLSearchParams(window.location.search).get('auth') === 'access_denied';
   const [demo, setDemo] = useState(false);
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useState<Page>(new URLSearchParams(location.search).has('line')?'security':'overview');
   const [data, setData] = useState<Dataset>(emptyData);
   const [applicationOptions, setApplicationOptions] = useState<Application[]>([]);
   const [dataReady, setDataReady] = useState(false);
@@ -97,7 +98,7 @@ export default function App() {
   useEffect(() => { void checkLoginContext(); }, [returnTo]);
 
   async function loadData() {
-    if (!identity || identity.requiresMfa || demo || (returnTo !== null && identity.mfaMethod !== 'recovery')) return;
+    if (!identity || identity.requiresMfa || identity.phoneRequired || demo || (returnTo !== null && identity.mfaMethod !== 'recovery')) return;
     setLoading(true);
     try {
       if (identity.user.role === 'admin' && !identity.adminMfaRequired) {
@@ -119,10 +120,10 @@ export default function App() {
       setDataReady(true);
     } catch (error) { handleError(error); } finally { setLoading(false); }
   }
-  useEffect(() => { if (identity && !identity.requiresMfa && !demo) void loadData(); }, [identity?.user.id, identity?.requiresMfa, identity?.adminMfaRequired, demo]);
+  useEffect(() => { if (identity && !identity.requiresMfa && !demo) void loadData(); }, [identity?.user.id, identity?.requiresMfa, identity?.phoneRequired, identity?.adminMfaRequired, demo]);
   useEffect(() => {
     const collection = collectionMap[page];
-    if (!identity || identity.requiresMfa || demo || !dataReady || !collection) return;
+    if (!identity || identity.requiresMfa || identity.phoneRequired || demo || !dataReady || !collection) return;
     const currentRequest = ++requestId.current;
     const timer = setTimeout(() => {
       setLoading(true);
@@ -150,7 +151,7 @@ export default function App() {
   async function onVerified() {
     const next = await api<Identity>('/auth/me'); setIdentity(next); setCsrfToken(next.csrfToken);
     if (next.mfaMethod === 'recovery') navigate('security');
-    else if (loginContext) window.location.assign(loginContext.returnTo);
+    else if (loginContext && !next.phoneRequired) window.location.assign(loginContext.returnTo);
     else if (next.user.role !== 'admin'||next.adminMfaRequired) navigate('security');
   }
   async function refresh() {
@@ -216,20 +217,21 @@ export default function App() {
           setDialog({ type: 'secret', key }); notify('สร้าง API key แล้ว'); return;
         }
         case 'revoke': {
-          const paths = { user: '/admin/users', email: '/admin/allowlist', application: '/admin/applications', key: '/admin/api-keys', session: '/auth/sessions' };
+          const paths = { userSessions: '/admin/users', user: '/admin/users', email: '/admin/allowlist', application: '/admin/applications', key: '/admin/api-keys', session: '/auth/sessions' };
           if (demo) {
             if (dialog.entity === 'user' && dialog.id === identity.user.id) throw new Error('ไม่สามารถลบสิทธิ์ของบัญชีปัจจุบันได้');
             const now = new Date().toISOString();
             demoUpdate(d => {
+              if (dialog.entity === 'userSessions') return d;
               if (dialog.entity === 'user') { const user = d.users.find(u => u.id === dialog.id); return { ...d, users: d.users.filter(u => u.id !== dialog.id), emails: d.emails.filter(e => e.email !== user?.email) }; }
               if (dialog.entity === 'email') { const email = d.emails.find(e => e.id === dialog.id); return { ...d, emails: d.emails.filter(e => e.id !== dialog.id), users: d.users.filter(u => u.email !== email?.email) }; }
               if (dialog.entity === 'application') { setApplicationOptions(options => options.map(a => a.id === dialog.id ? { ...a, revokedAt: now } : a)); return { ...d, applications: d.applications.map(a => a.id === dialog.id ? { ...a, revokedAt: now } : a), apiKeys: d.apiKeys.map(k => k.applicationId === dialog.id ? { ...k, revokedAt: now } : k) }; }
               if (dialog.entity === 'key') return { ...d, apiKeys: d.apiKeys.map(k => k.id === dialog.id ? { ...k, revokedAt: now } : k) };
               return { ...d, sessions: d.sessions.filter(s => s.id !== dialog.id), stats: { ...d.stats, activeSessions: Math.max(0, d.stats.activeSessions - 1) } };
             }, `${dialog.entity === 'email' ? 'allowlist' : dialog.entity === 'key' ? 'api_key' : dialog.entity}.${['user', 'email'].includes(dialog.entity) ? 'deleted' : 'revoked'}`, dialog.label);
-          } else await api(`${paths[dialog.entity]}/${encodeURIComponent(dialog.id)}`, 'DELETE');
+          } else await api(`${paths[dialog.entity]}/${encodeURIComponent(dialog.id)}${dialog.entity === 'userSessions' ? '/sessions' : ''}`, 'DELETE');
           if (dialog.entity === 'session' && dialog.current) { setDialog(null); setIdentity(null); setDemo(false); setDataReady(false); setData(emptyData); notify('ยกเลิกเซสชันปัจจุบันแล้ว'); return; }
-          notify('ยกเลิกสิทธิ์การเข้าถึงแล้ว'); break;
+          notify(dialog.entity === 'userSessions' ? 'ยกเลิกเซสชันทุกอุปกรณ์แล้ว บัญชียังใช้งานได้' : 'ยกเลิกสิทธิ์การเข้าถึงแล้ว'); break;
         }
         case 'totp':
         case 'disableTotp': {
@@ -254,6 +256,7 @@ export default function App() {
   if (returnTo !== null && !loginContext) return <LoginRequest error={loginError} onRetry={() => void checkLoginContext()} />;
   if (!identity) return <><Login context={loginContext} status={status} checking={checking} onDemo={enterDemo} onRetry={() => void checkIdentity()} />{toast && <Toast {...toast} close={() => setToast(null)} />}</>;
   if (identity.requiresMfa) return <><Mfa context={loginContext} identity={identity} onVerified={onVerified} onLogout={logout} />{toast && <Toast {...toast} close={() => setToast(null)} />}</>;
+  if(identity.phoneRequired) return <PhoneGate onVerified={onVerified} onLogout={logout}/>;
   if (loginContext && (identity.mfaMethod !== 'recovery' || accessDenied)) return <ContinueLogin denied={accessDenied} identity={identity} context={loginContext} onLogout={logout} />;
 
   let displayedData = data; let displayedMeta = meta;
@@ -273,10 +276,10 @@ export default function App() {
       {dialog.type === 'email' && <><label className="field">อีเมล Google<input name="email" type="email" placeholder="name@gmail.com" maxLength={254} required autoComplete="off" /></label><label className="field">สิทธิ์เมื่อเข้าสู่ระบบ<select name="role" defaultValue="user"><option value="user">Member — ผู้ใช้งานทั่วไป</option><option value="admin">Admin — จัดการผู้ใช้และการเข้าถึงทั้งหมด</option></select></label><div className="field-hint"><ShieldCheck size={15} />เพิ่มเฉพาะบัญชี Google ที่คุณต้องการอนุญาต ผู้ใช้จะต้องยืนยันสองขั้นตอนเมื่อเข้าสู่ระบบ</div></>}
       {dialog.type === 'application' && <><label className="field">ชื่อแอปพลิเคชัน<input name="name" placeholder="เช่น People & HR" maxLength={100} required /></label><label className="field">คำอธิบาย <span>(ไม่จำเป็น)</span><textarea name="description" placeholder="ระบบนี้ใช้สำหรับอะไร" maxLength={500} rows={3} /></label><label className="field">Redirect URI<input name="redirectUri" type="url" placeholder="https://app.example.com/auth/callback" maxLength={2048} required /></label><p className="field-hint">ต้องเป็น HTTPS และตรงกับ callback ของแอปทุกตัวอักษร อนุญาต HTTP localhost สำหรับการพัฒนา</p></>}
       {dialog.type === 'key' && <>{!allowedApps.length ? <div className="inline-error">เพิ่มแอปพลิเคชันที่ใช้งานได้ก่อนสร้าง API key <button type="button" className="text-link" onClick={() => setDialog({ type: 'application' })}>เพิ่มแอปพลิเคชัน<Plus size={14} /></button></div> : <><label className="field">ชื่อคีย์<input name="name" placeholder="เช่น Production service" maxLength={100} required /></label><label className="field">แอปพลิเคชัน<select name="applicationId" required>{allowedApps.map(app => <option value={app.id} key={app.id}>{app.name}</option>)}</select></label><label className="field">อายุคีย์<select name="expiresInDays" defaultValue="30"><option value="30">30 วัน</option><option value="60">60 วัน</option><option value="90">90 วัน</option><option value="365">365 วัน</option></select></label><fieldset className="scope-fieldset"><legend>ขอบเขตสิทธิ์ (Scopes)</legend><label className="checkbox-row"><input type="checkbox" name="scopes" value="identity:read" defaultChecked /><span><strong>identity:read</strong><small>อ่านข้อมูลผู้ใช้จาก access token</small></span></label><label className="checkbox-row"><input type="checkbox" name="scopes" value="token:introspect" defaultChecked /><span><strong>token:introspect</strong><small>ตรวจสอบสถานะ token และการเพิกถอน</small></span></label></fieldset></>}</>}
-      {dialog.type === 'revoke' && <><div className="revoke-target"><LockKeyhole size={22} /><strong>{dialog.label}</strong></div><p className="modal-body-copy">{dialog.entity === 'user' || dialog.entity === 'email' ? 'บัญชีนี้จะสูญเสียสิทธิ์เข้าสู่ระบบ เซสชันและ SSO token ที่เกี่ยวข้องจะถูกยกเลิก ระบบปลายทางอาจรับรู้การเปลี่ยนแปลงช้าสูงสุด 5 วินาที' : dialog.entity === 'application' ? 'แอปพลิเคชันนี้ รวมถึง API keys และ token ที่เกี่ยวข้องจะใช้ยืนยันตัวตนไม่ได้อีก' : dialog.entity === 'key' ? 'ระบบที่ใช้คีย์นี้จะเรียก API ไม่ได้ ควรเปลี่ยนไปใช้คีย์ใหม่ก่อนดำเนินการ' : dialog.current ? 'คุณจะออกจากระบบในอุปกรณ์นี้ และ token ที่ผูกกับเซสชันนี้จะสิ้นสุดลง' : 'เซสชันนี้และ SSO token ที่เกี่ยวข้องจะถูกยกเลิก ระบบปลายทางอาจรับรู้ช้าสูงสุด 5 วินาที'}</p></>}
+      {dialog.type === 'revoke' && <><div className="revoke-target"><LockKeyhole size={22} /><strong>{dialog.label}</strong></div><p className="modal-body-copy">{dialog.entity === 'userSessions' ? 'ออกจากระบบทุกอุปกรณ์และเพิกถอน SSO token ของบัญชีนี้ โดยคงบัญชี Role และ MFA เดิมไว้ ระบบปลายทางอาจรับรู้ช้าสูงสุด 5 วินาที หากต้องระงับการเข้าสู่ระบบครั้งใหม่ด้วย ให้ลบอีเมลจากรายการอนุญาต' : dialog.entity === 'user' || dialog.entity === 'email' ? 'บัญชีนี้จะสูญเสียสิทธิ์เข้าสู่ระบบ เซสชันและ SSO token ที่เกี่ยวข้องจะถูกยกเลิก ระบบปลายทางอาจรับรู้การเปลี่ยนแปลงช้าสูงสุด 5 วินาที' : dialog.entity === 'application' ? 'แอปพลิเคชันนี้ รวมถึง API keys และ token ที่เกี่ยวข้องจะใช้ยืนยันตัวตนไม่ได้อีก' : dialog.entity === 'key' ? 'ระบบที่ใช้คีย์นี้จะเรียก API ไม่ได้ ควรเปลี่ยนไปใช้คีย์ใหม่ก่อนดำเนินการ' : dialog.current ? 'คุณจะออกจากระบบในอุปกรณ์นี้ และ token ที่ผูกกับเซสชันนี้จะสิ้นสุดลง' : 'เซสชันนี้และ SSO token ที่เกี่ยวข้องจะถูกยกเลิก ระบบปลายทางอาจรับรู้ช้าสูงสุด 5 วินาที'}</p></>}
       {dialog.type === 'totp' && <><p className="modal-body-copy">1. สแกน QR ด้วย Google Authenticator หรือแอป TOTP ที่รองรับ</p><div className="qr-frame">{qrCode ? <img src={qrCode} width="210" height="210" alt="QR code สำหรับตั้งค่า Authenticator" /> : <Spinner label="กำลังสร้าง QR…" />}</div><div className="secret-manual"><label>หรือป้อน Setup key ด้วยตนเอง</label><div><code>{dialog.secret}</code><CopyButton value={dialog.secret} copied={copied} onCopy={value => void copy(value)} /></div></div><p className="modal-body-copy">2. บันทึก Recovery codes ไว้ในที่ปลอดภัย รหัสจะใช้ได้หลังเปิด Authenticator สำเร็จ</p></>}
       {(dialog.type === 'totp' || dialog.type === 'recoveryCodes') && <><div className="recovery-codes">{codes.map(code => <code key={code}>{code}</code>)}</div><div className="recovery-actions"><CopyButton value={codes.join('\n')} copied={copied} onCopy={value => void copy(value)} label="คัดลอกรหัส" /><button className="copy-button" type="button" onClick={() => downloadCodes(codes)}><Download size={15} />ดาวน์โหลด</button></div><p className="field-hint">แต่ละรหัสใช้ได้เพียงครั้งเดียว ระบบจะไม่แสดงรหัสชุดนี้ซ้ำหลังปิดหน้าต่าง</p><label className="checkbox-row"><input type="checkbox" required /><span>ฉันบันทึกรหัสกู้คืนไว้ในที่ปลอดภัยแล้ว</span></label></>}
-      {(dialog.type === 'totp' || dialog.type === 'disableTotp' || dialog.type === 'regenerateCodes') && <>{dialog.type === 'disableTotp' && <p className="modal-body-copy">ยืนยันด้วยรหัสจาก Authenticator ปัจจุบัน การเข้าสู่ระบบครั้งถัดไปจะใช้ Email OTP และ Recovery codes เดิมจะถูกยกเลิก</p>}{dialog.type === 'regenerateCodes' && <p className="modal-body-copy">ยืนยันด้วยรหัสจาก Authenticator ปัจจุบัน เมื่อสร้างรหัสชุดใหม่ Recovery codes ชุดเดิมจะถูกยกเลิกทั้งหมด</p>}<OtpInput key={dialog.type} name="code" label={dialog.type==='totp'?'3. กรอกรหัส 6 หลักจากแอป':'รหัสจาก Authenticator'} /></>}
+      {(dialog.type === 'totp' || dialog.type === 'disableTotp' || dialog.type === 'regenerateCodes') && <>{dialog.type === 'disableTotp' && <p className="modal-body-copy">ยืนยันด้วยรหัสจาก Authenticator ปัจจุบัน การเข้าสู่ระบบครั้งถัดไปจะใช้ Email OTP และ Recovery codes, Passkeys และ LINE ที่ผูกไว้จะถูกยกเลิก</p>}{dialog.type === 'regenerateCodes' && <p className="modal-body-copy">ยืนยันด้วยรหัสจาก Authenticator ปัจจุบัน เมื่อสร้างรหัสชุดใหม่ Recovery codes ชุดเดิมจะถูกยกเลิกทั้งหมด</p>}<OtpInput key={dialog.type} name="code" label={dialog.type==='totp'?'3. กรอกรหัส 6 หลักจากแอป':'รหัสจาก Authenticator'} /></>}
       {dialog.type === 'secret' && <><div className="secret-key"><code>{dialog.key}</code><CopyButton value={dialog.key} copied={copied} onCopy={value => void copy(value)} label="คัดลอกคีย์" /></div><div className="field-hint"><LockKeyhole size={16} />เก็บคีย์ใน environment หรือ secret manager ของเซิร์ฟเวอร์ ห้ามเผยแพร่ใน frontend หรือ Git</div><label className="checkbox-row"><input type="checkbox" required /><span>ฉันบันทึกคีย์ไว้ในที่ปลอดภัยแล้ว</span></label></>}
       <div className="modal-actions">{!['secret', 'recoveryCodes'].includes(dialog.type) && <button className="button secondary" type="button" onClick={closeDialog} disabled={busy}>ยกเลิก</button>}<button className={`button ${dialog.type === 'revoke' ? 'danger' : 'primary'}`} type="submit" disabled={busy || (dialog.type === 'key' && !allowedApps.length)}>{busy ? <LoaderCircle size={16} className="spin" /> : dialog.type === 'revoke' ? <LockKeyhole size={16} /> : ['totp', 'disableTotp', 'regenerateCodes'].includes(dialog.type) ? <Fingerprint size={16} /> : null}{busy ? 'กำลังดำเนินการ…' : dialog.type === 'email' ? 'เพิ่มอีเมล' : dialog.type === 'application' ? 'เพิ่มแอปพลิเคชัน' : dialog.type === 'key' ? 'สร้าง API key' : dialog.type === 'revoke' ? 'ยืนยันยกเลิกสิทธิ์' : dialog.type === 'totp' ? 'ยืนยันและเปิดใช้งาน' : dialog.type === 'disableTotp' ? 'ยืนยันปิดใช้งาน' : dialog.type === 'regenerateCodes' ? 'สร้างรหัสชุดใหม่' : 'บันทึกแล้ว เสร็จสิ้น'}</button></div></form></Modal>}{reauth&&<Reauthenticate complete={()=>finishReauth(true)} cancel={()=>finishReauth(false)} />}{toast && <Toast {...toast} close={() => setToast(null)} />}</div>;
 }

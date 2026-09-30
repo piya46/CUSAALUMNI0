@@ -10,6 +10,7 @@ adminRouter.use(requireAuth, requireAdmin, requireRecentAdminMfa, csrfProtection
 adminRouter.get('/overview', controller.overview);
 adminRouter.get('/users', controller.users);
 adminRouter.delete('/users/:id', controller.deleteUser);
+adminRouter.delete('/users/:id/sessions', requireFreshMfa, controller.revokeUserSessions);
 adminRouter.get('/allowlist', controller.allowlist);
 adminRouter.post('/allowlist', controller.createAllowedEmail);
 adminRouter.delete('/allowlist/:id', controller.deleteAllowedEmail);

@@ -7,7 +7,7 @@ import { startAuditWorker } from './services/auditWorker.js';
 const stopAudit=config.configured&&!config.installEnabled?startAuditWorker():async()=>{};
 const stopEvidence=config.configured&&!config.installEnabled?startEvidenceCleanup():async()=>{};
 const server=createApp().listen(config.port,'0.0.0.0',()=>{
-  console.log(`CUSA Identity API listening on port ${config.port}`);
+  console.log(`CUSA SSO API listening on port ${config.port}`);
   if (!config.configured) console.log('Setup required. Configure .env before using authentication; UI demo remains available.');
   if (config.installEnabled) console.log('Installation mode: authentication and audit worker are paused. Disable INSTALL_ENABLED and restart after setup.');
 });

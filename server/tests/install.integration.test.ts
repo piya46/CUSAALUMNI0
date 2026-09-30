@@ -46,7 +46,7 @@ test('real installer retries partial DDL, rolls back admin on failure, serialize
   assert.deepEqual(admin, { email: config.bootstrapAdminEmail, role: 'admin' });
   assert.equal((await query("SELECT id FROM audit_logs WHERE event = 'admin.bootstrapped'")).length, 1);
   assert.equal((await query('SELECT id FROM installation_state')).length, 1);
-  assert.equal((await query('SELECT name FROM schema_migrations')).length, 4);
+  assert.equal((await query('SELECT name FROM schema_migrations')).length, 5);
   assert.deepEqual(await migrate(), [], 'Future migration runs must preserve installation lock');
   await assert.rejects(installationService.check(), error => error instanceof InstallationError && error.code === 'INSTALL_LOCKED');
   await assert.rejects(installationService.run(), error => error instanceof InstallationError && error.code === 'INSTALL_LOCKED');

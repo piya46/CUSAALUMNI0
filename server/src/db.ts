@@ -3,8 +3,7 @@ import mysql, { type PoolConnection, type ResultSetHeader, type RowDataPacket } 
 import { config } from './config.js';
 
 export const pool = mysql.createPool({
-  host: config.dbHost,
-  port: config.dbPort,
+  ...(config.dbSocketPath ? { socketPath: config.dbSocketPath } : { host: config.dbHost, port: config.dbPort }),
   database: config.dbName,
   user: config.dbUser,
   password: config.dbPassword,

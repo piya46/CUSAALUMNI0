@@ -67,7 +67,7 @@ const liveTokenSelect = `
     JOIN application_memberships m ON m.application_id=t.application_id AND m.user_id=t.user_id AND m.revoked_at IS NULL
    WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > UTC_TIMESTAMP(3)
      AND s.kind = 'full' AND s.expires_at > UTC_TIMESTAMP(3)
-     AND s.authenticated_at IS NOT NULL AND u.deleted_at IS NULL AND a.revoked_at IS NULL
+     AND s.authenticated_at IS NOT NULL AND u.deleted_at IS NULL AND (u.phone_required=FALSE OR EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id)) AND a.revoked_at IS NULL
      AND ${hasAssignedRole('t.application_id', 't.user_id')}`;
 
 export function createSsoModel(db: SsoDatabase = { query, execute, transaction }) {
@@ -111,7 +111,7 @@ export function createSsoModel(db: SsoDatabase = { query, execute, transaction }
           JOIN application_memberships m ON m.application_id=a.id AND m.user_id=u.id AND m.revoked_at IS NULL
           WHERE a.id = ? AND BINARY a.redirect_uri = BINARY ? AND a.revoked_at IS NULL
             AND s.kind = 'full' AND s.authenticated_at IS NOT NULL
-            AND s.expires_at > UTC_TIMESTAMP(3) AND u.deleted_at IS NULL
+            AND s.expires_at > UTC_TIMESTAMP(3) AND u.deleted_at IS NULL AND (u.phone_required=FALSE OR EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id))
             AND ${hasAssignedRole('a.id', 'u.id')}
           FOR UPDATE`, [input.sessionId, input.userId, input.applicationId, input.redirectUri], connection);
         if (!live) throw new SsoModelError('access_denied');
@@ -140,7 +140,7 @@ export function createSsoModel(db: SsoDatabase = { query, execute, transaction }
            WHERE c.code_hash = ? AND c.application_id = ?
              AND c.consumed_at IS NULL AND c.expires_at > UTC_TIMESTAMP(3)
              AND s.kind = 'full' AND s.authenticated_at IS NOT NULL
-             AND s.expires_at > UTC_TIMESTAMP(3) AND u.deleted_at IS NULL
+             AND s.expires_at > UTC_TIMESTAMP(3) AND u.deleted_at IS NULL AND (u.phone_required=FALSE OR EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id))
              AND ${hasAssignedRole('c.application_id', 'c.user_id')}
            FOR UPDATE`, [input.codeHash, key.applicationId], connection);
         if (!code || code.redirectUri !== input.redirectUri || key.redirectUri !== input.redirectUri
