@@ -1,5 +1,9 @@
 # เชื่อมต่อระบบอื่นกับ CUSA SSO
 
+อัปเดต 4 ตุลาคม 2026: Service ที่เปิด FIFO อาจถูกส่งไป `/waiting` ก่อน Google/MFA ห้ามเพิ่มพารามิเตอร์ `skip_queue` หรือ branding นอก contract และไม่ยืดอายุ state/verifier เพื่อแก้คิวยาว ดู [คู่มือคิว](WAITING-ROOM.md) สำหรับการเริ่ม OAuth ใหม่โดยคงสิทธิ์คิวเดิม
+
+เพิ่ม `POST /api/sso/revoke` รับ `{"token":"<ACCESS_TOKEN>"}` พร้อม X-API-Key ที่มี scope `token:revoke` ถอน token/code ของ session เดียวกันเฉพาะ Service เจ้าของคีย์ ไม่ลบ session กลาง ไม่กระทบ Service อื่นและไม่ห้าม login ใหม่ ตอบ `200 {"ok":true}` รวม unknown/cross-app token BFF ต้องทำลาย local session/cache ของตนเองด้วย คีย์เดิมไม่ได้รับ scope เพิ่มอัตโนมัติ รายละเอียดและตัวอย่างอยู่ใน [OpenAPI](../web/public/openapi.json)
+
 API นี้เป็น SSO สำหรับระบบภายในที่ผู้ดูแลอนุมัติ ใช้ authorization code + PKCE S256, Google Login และ MFA ของ CUSA ก่อนออก token เป็น **custom first-party SSO API** ไม่ใช่ OpenID Connect provider แบบสมบูรณ์: ไม่มี discovery, ID token, refresh token, dynamic client registration หรือหน้าขอ consent สำหรับบุคคลที่สาม
 
 ## ตั้งค่า application

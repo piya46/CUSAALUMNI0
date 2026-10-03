@@ -4,6 +4,7 @@ import * as controller from '../controllers/adminController.js';
 
 import * as reset from '../controllers/mfaResetController.js';
 import * as access from '../controllers/serviceAccessController.js';
+import { readQueueSettings, saveQueueSettings } from '../controllers/waitingRoomController.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin, requireRecentAdminMfa, csrfProtection);
@@ -17,6 +18,8 @@ adminRouter.delete('/allowlist/:id', controller.deleteAllowedEmail);
 adminRouter.get('/applications', controller.applications);
 adminRouter.post('/applications', controller.createApplication);
 adminRouter.delete('/applications/:id', controller.deleteApplication);
+adminRouter.get('/applications/:id/queue', readQueueSettings);
+adminRouter.put('/applications/:id/queue', saveQueueSettings);
 adminRouter.get('/api-keys', controller.apiKeys);
 adminRouter.post('/api-keys', controller.createApiKey);
 adminRouter.delete('/api-keys/:id', controller.deleteApiKey);

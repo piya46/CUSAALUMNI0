@@ -1,5 +1,33 @@
 # ผลทบทวน Ultimate Delta Blueprint
 
+## เพิ่มเติม 4 ตุลาคม 2026: On-Premise / Enterprise Queue Blueprint
+
+ผู้ใช้ยืนยันว่าคง HostAtom/Plesk เดิม จึงใช้หลักจำกัดทรัพยากรและเสริมคิวโดยไม่สมมติว่ามี root ดู [คู่มือคิวและ Session](WAITING-ROOM.md)
+
+| ข้อเสนอใหม่ | สิ่งที่ทำ / การตัดสินใจ |
+| --- | --- |
+| PM2 เต็มทุก core / Firewall / ModSecurity | ไม่ติดตั้งซ้อน Passenger หรือแก้ OS ที่ไม่มีสิทธิ์ ถ้าจะใช้ WAF ให้ Host ตั้งและทดสอบกับ Google/LINE callback, uploads และ trusted proxy; ไม่ปิด application controls |
+| บังคับ Unix socket | คง DB_SOCKET_PATH แบบ opt-in เมื่อ Host ยืนยัน path; TCP localhost เดิมยังใช้ได้ ไม่มี fallback จาก TLS สู่ plaintext อัตโนมัติ |
+| chmod 400 | คง .env 0600 นอก Document Root (หรือ 0400 หาก deployment ไม่ต้องเขียน) ทั้งสองแบบตัด group/world permissions; ไม่สร้างกุญแจใหม่ทุก restart |
+| Virtual Waiting Room | เพิ่ม FIFO ราย Service, rate/capacity/IP quotas ที่ Admin ปรับได้, Lua atomic + bounded work, HMAC cookie binding, ticket Ref/position/estimate, expiry และ fail-closed เมื่อ Redis ล่ม; ปิดเป็นค่าเริ่มต้น |
+| Random queue | ไม่เพิ่มในรุ่นนี้เพราะผู้เข้าคิวก่อนอาจถูกเลื่อนไปไม่สิ้นสุด ถ้าต้องใช้ lottery ต้องกำหนดรอบปิดรับ seed/audit/fairness แยกอย่างชัดเจน |
+| Virtual MAC / Canvas fingerprint | ไม่เพิ่ม: browser ไม่ให้ MAC ที่เชื่อถือได้และ fingerprint เปลี่ยน/ปลอม/ชนกันได้ มีผลต่อความเป็นส่วนตัว ไม่ใช้เป็น authentication factor |
+| หลายแท็บ/หลายบัญชี | คุกกี้เดียวกันใช้ตั๋วต่อ Service เดียว; post-login มี cooldown ต่อ account/Service 60 วินาที การกันหนึ่งคนหลายบัญชีหรือการซื้อซ้ำเป็นหน้าที่ระบบธุรกิจ ไม่กล่าวอ้างกันได้ทั้งหมด |
+| แยก SSO กับ business rules | คง Google/MFA/Allowlist, PKCE, scoped roles, opaque tokens และ introspection; ไม่เปลี่ยนเป็น JWT offline ที่ทำให้เพิกถอนช้าขึ้น |
+| Self-service | มีหน้า Session/MFA/Passkey/LINE แล้ว; เพิ่ม logout ทุกอุปกรณ์ของตนเองแบบ CSRF + atomic audit |
+| Service ขอถอนเครื่องเก่า | เพิ่ม token:revoke scope และ POST /api/sso/revoke ถอน grants ของ session เฉพาะ Service เจ้าของคีย์ ไม่ให้ Service ถอน session กลางหรือสิทธิ์ Service อื่น |
+| Consent screen | เพิ่มรายการข้อมูลที่จะส่งให้ Service ในบริบท Login คงการใช้ข้อมูลตาม purpose และไม่อ้างว่าการกด Login เป็น PDPA consent ทุกกรณี; ไม่แชร์ phone/evidence เพิ่ม ไม่สร้างประวัติ consent ปลอม |
+| Developer self-registration | คง Admin approval + API key แสดงครั้งเดียว แทนการให้บุคคลใดก็ได้สร้าง trusted callback เอง Portal แบบ delegated owner ต้องมี tenant/ownership/quota และ approval policy ก่อนเปิด |
+| SLO Webhook / Device ID | ยังไม่เพิ่ม global Device ID หรือ webhook ส่ง URL ตาม request ใช้ scoped revocation + introspection ที่มีอยู่ การเพิ่ม webhook ต้องมี SSRF protection, signed payload, retries/outbox และรับรอง endpoint ownership |
+| Server-to-server quotas | มี 3,000/min/Service และ 1,500/min/key รวม endpoints อยู่แล้ว; revoke ใช้ชุดเดียวกัน มี coarse IP limit ก่อน DB ไม่เปลี่ยนเป็น unlimited |
+| Cron ภายใน Node | เพิ่ม maintenance scheduler: purge 15m, ops 5m, credentials 60m พร้อม startup catch-up, advisory locks, graceful stop และ metrics; ทำงานเฉพาะระหว่าง Passenger process ทำงาน |
+
+ไม่ใช้คำว่า Enterprise/Zero Trust เป็นการรับประกัน security หรือ throughput คิวที่ polling เองยังใช้ทรัพยากร ต้องวัดบน Host จริงก่อนรับทราฟฟิกจำนวนมาก เอกสารนี้ไม่ใช่การติดตั้ง On-Premise หรือการรับรองทางกฎหมาย
+
+อ้างอิงทางเทคนิค: [Redis Lua atomic execution](https://redis.io/docs/latest/develop/programmability/eval-intro/), [W3C browser fingerprinting guidance](https://www.w3.org/TR/fingerprinting-guidance/), [OWASP OAuth2](https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html)
+
+## การตัดสินใจรุ่นก่อนหน้า
+
 ตัดสินใจตามโค้ดจริงและข้อจำกัด HostAtom/Plesk ไม่ถือว่าคำว่า Enterprise, Zero Trust หรือ Unlimited Bandwidth รับรองความปลอดภัยหรือรองรับผู้ใช้พร้อมกันหลักแสนได้โดยไม่วัดผล
 
 ## ตารางตัดสินใจ

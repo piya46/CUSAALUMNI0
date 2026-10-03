@@ -2,7 +2,7 @@
 
 คู่มือนี้สำหรับ **Plesk บน Linux ที่เปิด Node.js/Passenger** ใช้โดเมนเดียวสำหรับหน้าเว็บและ API สมมติชื่อโดเมน `sso.example.com` และโฟลเดอร์โปรเจกต์ `cusa-sso` ภายใน webspace ของบัญชี hosting
 
-หากใช้โดเมน `sso.reunion.scicu-alumni.com` และอัปเดตรุ่นนี้ ดู [ขั้นตอน Upload ZIP และ Scheduled Tasks บน HostAtom](HOSTATOM-RELEASE.md) มี `deploy:package`, `deploy:check` และคำสั่ง migration ที่ใช้ production build ได้โดยไม่ต้องมี tsx บน Host
+หากใช้โดเมน `sso.reunion.scicu-alumni.com` และอัปเดตรุ่นนี้ ดู [ขั้นตอน Upload ZIP และงานอัตโนมัติใน Node บน HostAtom](HOSTATOM-RELEASE.md) มี `deploy:package`, `deploy:check` และคำสั่ง migration ที่ใช้ production build ได้โดยไม่ต้องมี tsx บน Host
 
 ## ค่าที่ใส่ในหน้า Node.js
 

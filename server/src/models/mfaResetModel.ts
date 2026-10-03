@@ -6,6 +6,7 @@ import { lockAdministrators,type Actor,type AuditWriter } from './adminModel.js'
 import { HttpError } from '../middleware/security.js';
 import { destroyEvidence,readEvidence } from '../services/mfaEvidence.js';
 import { recordAudit } from './authModel.js';
+import type { PoolConnection } from 'mysql2/promise';
 type Row=Record<string,any>;
 export const resetNoticeVersion='2026-09-30';
 const fields=`r.id,r.user_id AS userId,r.status,r.reason,r.created_at AS createdAt,r.delete_after AS deleteAfter,
@@ -91,10 +92,11 @@ export async function decideReset(actor:Actor,id:string,decision:'approve'|'reje
     await record(conn,`mfa.reset.${status}`,row.user_id,{requestId:id,reason,retentionDays:7});return {status};
   });
 }
-export async function purgeResetEvidence(){
+export async function purgeResetEvidence(connection?:PoolConnection,signal?:AbortSignal){
   let count=0;
   // Finish one locked record at a time; filesystem deletes are idempotent after rollback/crash.
   for(let batch=0;batch<100;batch++){
+    signal?.throwIfAborted();
     const removed=await transaction(async conn=>{
       const [row]=await query<Row>(`SELECT * FROM mfa_reset_requests WHERE purged_at IS NULL AND
         (delete_after<=DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR) OR (status='uploading' AND created_at<DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 HOUR)))
@@ -104,7 +106,7 @@ export async function purgeResetEvidence(){
       await execute("UPDATE mfa_reset_requests SET purged_at=UTC_TIMESTAMP(3),status=IF(status IN ('uploading','pending','pending_second'),'expired',status) WHERE id=?",[row.id],conn);
       await execute('DELETE FROM mfa_reset_reviews WHERE request_id=?',[row.id],conn);
       await recordAudit({actorId:null,actorEmail:null,sessionId:null,status:'success',userAgent:'',event:'mfa.reset.evidence.destroyed',target:row.user_id,ip:'system',actorType:'system',metadata:{requestId:row.id,scheduled:true}},conn);return true;
-    });
+    },connection);
     if(!removed)break;count++;
   }
   return count;

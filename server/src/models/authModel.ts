@@ -197,6 +197,18 @@ export async function deleteSession(id: string, userId: string,record?:AuthAudit
     return result;
   });
 }
+export async function deleteOwnSessions(userId: string, sessionId: string, record: AuthAudit) {
+  return transaction(async conn => {
+    const [live] = await query<Row>(`SELECT u.id FROM users u JOIN sessions s ON s.user_id=u.id
+      WHERE u.id=? AND u.deleted_at IS NULL AND s.id=? AND s.kind='full' AND s.expires_at>UTC_TIMESTAMP(3) FOR UPDATE`, [userId,sessionId],conn);
+    if (!live) return false;
+    await execute('UPDATE access_tokens SET revoked_at=UTC_TIMESTAMP(3) WHERE user_id=? AND revoked_at IS NULL',[userId],conn);
+    await execute('DELETE FROM authorization_codes WHERE user_id=?',[userId],conn);
+    const removed = await execute('DELETE FROM sessions WHERE user_id=?',[userId],conn);
+    await record(conn,'auth.sessions.revoked',userId,{sessions:removed.affectedRows});
+    return true;
+  });
+}
 
 export async function recoveryCodesRemaining(userId: string) {
   const [r] = await query<Row>('SELECT COUNT(*) AS count FROM mfa_recovery_codes WHERE user_id=? AND used_at IS NULL',[userId]); return Number(r.count);

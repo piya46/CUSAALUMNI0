@@ -43,8 +43,9 @@ export async function execute(sql: string, params: any[] = [], connection?: Pool
   return result;
 }
 
-export async function transaction<T>(fn: (connection: PoolConnection) => Promise<T>): Promise<T> {
-  const connection = await pool.getConnection();
+// A caller-owned connection keeps a maintenance lock and transaction on one DB session.
+export async function transaction<T>(fn: (connection: PoolConnection) => Promise<T>, existingConnection?: PoolConnection): Promise<T> {
+  const connection = existingConnection ?? await pool.getConnection();
   try {
     await connection.beginTransaction();
     const result = await fn(connection);
@@ -54,6 +55,6 @@ export async function transaction<T>(fn: (connection: PoolConnection) => Promise
     await connection.rollback();
     throw error;
   } finally {
-    connection.release();
+    if (!existingConnection) connection.release();
   }
 }

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CUSA SSO API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Custom first-party SSO: Authorization Code + PKCE S256, opaque tokens, application-scoped roles. Not a full OAuth/OIDC provider; no discovery, ID token, refresh token or dynamic registration. Examples are placeholders; never paste production secrets into browser documentation."
   },
   "servers": [
@@ -27,7 +27,7 @@
       "get": {
         "operationId": "authorize",
         "summary": "เริ่มเข้าสู่ระบบ Service",
-        "description": "Browser navigation หลัง BFF สร้างและเก็บ state/verifier ใน server session; code มีอายุ 90 วินาที ใช้ครั้งเดียว ต้องมีสมาชิกและ Role ของ Service",
+        "description": "Browser navigation หลัง BFF สร้างและเก็บ state/verifier ใน server session; code มีอายุ 90 วินาที ใช้ครั้งเดียว ต้องมีสมาชิกและ Role ของ Service; Service ที่เปิดคิวอาจส่งไป /waiting ก่อน Google/MFA ห้ามเพิ่มพารามิเตอร์นอกสัญญา คิวไม่แทนการตรวจสิทธิ์หรือ PKCE",
         "tags": [
           "Authorization"
         ],
@@ -102,7 +102,7 @@
         ],
         "responses": {
           "303": {
-            "description": "ส่งไป /login เมื่อยังไม่ผ่าน MFA; สำเร็จส่ง callback?code=...&state=...; account ไม่มีสิทธิ์ไป /login?auth=access_denied",
+            "description": "ส่งไป /login เมื่อยังไม่ผ่าน MFA; สำเร็จส่ง callback?code=...&state=...; account ไม่มีสิทธิ์ไป /login?auth=access_denied; /waiting เมื่อ Service เปิดคิวและยังไม่มีสิทธิ์ผ่านคิว",
             "headers": {
               "Location": {
                 "schema": {
@@ -996,6 +996,155 @@
           }
         }
       }
+    },
+    "/api/sso/revoke": {
+      "post": {
+        "operationId": "revokeServiceSession",
+        "summary": "ถอน Token ของเซสชันเฉพาะ Service ของคุณ",
+        "description": "BFF ใช้ API key ที่มี token:revoke ส่ง access token ที่ถืออยู่ ระบบถอน access tokens และ authorization codes ของ session เดียวกันเฉพาะ application ของคีย์ ไม่ลบ SSO session ไม่กระทบ Service อื่น ไม่ห้าม login ใหม่ Unknown/cross-app token ตอบ ok เหมือนกัน; cache เดิมอาจมีผลไม่เกิน 5 วินาที ต้องทำลาย BFF session และล้าง cache ของตัวเองด้วย",
+        "tags": [
+          "Tokens"
+        ],
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntrospectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "ok": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation / invalid grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid request parameters",
+                  "code": "invalid_request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid or expired API key",
+                  "code": "invalid_client"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope / CORS / account access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "API key does not permit this operation",
+                  "code": "insufficient_scope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Quota exceeded; respect Retry-After",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Service request quota exceeded",
+                  "code": "RATE_LIMITED"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "เวลารอเป็นวินาที ห้าม retry รัว",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency or audit unavailable; fail closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Service unavailable",
+                  "code": "AUDIT_UNAVAILABLE"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Unable to process request",
+                  "code": "INTERNAL_ERROR"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "source": "curl --request POST \"$SSO_ORIGIN/api/sso/revoke\" \\\n  --header 'Content-Type: application/json' \\\n  --header \"X-API-Key: $SSO_API_KEY\" \\\n  --data '{\"token\":\"<ACCESS_TOKEN>\"}'"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1004,7 +1153,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-API-Key",
-        "description": "Application-bound backend secret. Scope identity:read or token:introspect as required."
+        "description": "Application-bound backend secret. Scope identity:read, token:introspect or token:revoke as required."
       },
       "BearerToken": {
         "type": "http",

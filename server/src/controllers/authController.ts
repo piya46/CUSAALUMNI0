@@ -124,6 +124,11 @@ export async function revokeSession(req: Request,res: Response) {
   if (id===req.identity!.sessionId) res.clearCookie(sessionCookie,cookieOptions);
   res.json({ok:true});
 }
+export async function revokeOwnSessions(req: Request,res: Response) {
+  if (!await model.deleteOwnSessions(req.identity!.userId,req.identity!.sessionId,record(req)))
+    throw new HttpError(401,'กรุณาเข้าสู่ระบบอีกครั้ง','UNAUTHENTICATED');
+  res.clearCookie(sessionCookie,cookieOptions); res.json({ok:true});
+}
 
 export async function reauthenticate(req:Request,res:Response) {
   if (!await model.verifyTotp(req.identity!.sessionId,req.body.code,'reauth',record(req))) throw new HttpError(400,'รหัสไม่ถูกต้องหรือถูกใช้แล้ว กรุณารอรหัสชุดถัดไป','INVALID_CODE');

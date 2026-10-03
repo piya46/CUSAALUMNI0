@@ -19,6 +19,7 @@ const schema = z.object({
   DB_QUEUE_LIMIT:z.coerce.number().int().min(1).max(1000).default(100),
   INTROSPECTION_CACHE_SECONDS:z.coerce.number().int().min(0).max(5).default(5),
   MFA_EVIDENCE_KEY:z.string().default(''),
+  BACKGROUND_JOBS_ENABLED:z.enum(['true','false']).default('true'),
   PASSKEY_ENABLED:z.enum(['true','false']).default('true'),
   LINE_MFA_ENABLED:z.enum(['true','false']).default('false'),
   LINE_LOGIN_CHANNEL_ID:z.string().default(''), LINE_LOGIN_CHANNEL_SECRET:z.string().default(''),
@@ -67,6 +68,7 @@ export function assertServerConfiguration() {
   if (!env.DB_SOCKET_PATH && env.DB_TLS !== 'true' && !permitsUnencryptedDatabase(env.DB_HOST)) throw new Error('Production DB_TLS=false requires localhost, a loopback IP, or a private IP on a trusted internal network; use verified TLS for public database endpoints');
 }
 export const config = {
+  backgroundJobsEnabled:env.BACKGROUND_JOBS_ENABLED==='true',
   passkeyEnabled:env.PASSKEY_ENABLED==='true',lineMfaEnabled:env.LINE_MFA_ENABLED==='true',
   lineLoginChannelId:env.LINE_LOGIN_CHANNEL_ID,lineLoginChannelSecret:env.LINE_LOGIN_CHANNEL_SECRET,
   lineMessagingChannelSecret:env.LINE_MESSAGING_CHANNEL_SECRET,lineChannelAccessToken:env.LINE_CHANNEL_ACCESS_TOKEN,

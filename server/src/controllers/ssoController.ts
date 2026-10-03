@@ -1,5 +1,6 @@
 import type { Request, RequestHandler, Response } from 'express';
 import { z } from 'zod';
+import { authorizationSchema } from '../services/authorizationRequest.js';
 import { audit, HttpError } from '../middleware/security.js';
 import { hashToken } from '../services/crypto.js';
 import { ssoModel, SsoModelError, type SsoModel } from '../models/ssoModel.js';
@@ -7,14 +8,6 @@ import { config } from '../config.js';
 import { IntrospectionCache } from '../services/introspectionCache.js';
 
 const opaqueToken = /^[A-Za-z0-9_-]{43}$/;
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const authorizationSchema = z.object({
-  client_id: z.string().regex(uuid), redirect_uri: z.string().min(1).max(2048),
-  response_type: z.literal('code'), state: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
-  code_challenge_method: z.literal('S256'), code_challenge: z.string().regex(opaqueToken)
-    .refine(value => Buffer.from(value, 'base64url').toString('base64url') === value),
-});
 const exchangeSchema = z.object({
   grant_type: z.literal('authorization_code'), code: z.string().regex(opaqueToken),
   redirect_uri: z.string().min(1).max(2048), code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),

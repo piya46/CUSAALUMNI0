@@ -19,6 +19,7 @@ import { getAuditQueueHealth } from './models/auditModel.js';
 import { getAuditWorkerStatus } from './services/auditWorker.js';
 import { checkRateLimitStore } from './services/rateLimitStore.js';
 import { createInstallRouter } from './routes/installRoutes.js';
+import { prepareQueuePage, queueVisit } from './controllers/waitingRoomController.js';
 
 export function createApp() {
   assertServerConfiguration();
@@ -33,7 +34,7 @@ export function createApp() {
   app.use('/api',(req,res,next)=>{
     if(['/health','/ready'].includes(req.path)) return next();
     if(req.path==='/auth/line/webhook')return webhookLimit(req,res,next);
-    return ['/sso/token','/sso/introspect'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
+    return ['/sso/token','/sso/introspect','/sso/revoke'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
   });
   app.post('/api/auth/line/webhook',requireConfigured,auditAvailability,express.raw({type:'application/json',limit:'64kb'}),lineWebhook);
   app.use(express.json({limit:'16kb'}));
@@ -53,20 +54,23 @@ export function createApp() {
   app.use('/api/install',createInstallRouter());
   // Setup mode keeps all authentication and service APIs closed until the operator restarts.
   if (config.installEnabled) app.use('/api', (_req,res) => res.status(503).json({error:'ระบบอยู่ระหว่างติดตั้ง กรุณาลองใหม่ภายหลัง',code:'INSTALL_IN_PROGRESS'}));
+  app.post('/api/queue/visit',requireConfigured,queueVisit);
+  app.get('/api/queue/session',requireConfigured,prepareQueuePage,(_req,res)=>res.json({ok:true}));
   app.use('/api',auditAvailability,attachIdentity,csrfProtection);
   app.use('/api/auth',authRouter); app.use('/api/admin',adminRouter); app.use('/api/sso',requireConfigured,ssoRouter);
   app.use('/api',(_req,res)=>res.status(404).json({error:'ไม่พบ API',code:'NOT_FOUND'}));
   const webDir=fileURLToPath(new URL('../../web/dist',import.meta.url));
+  app.get('/waiting',prepareQueuePage);
   app.get('/install', (_req,res,next) => {
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
     if (!config.installEnabled) return res.status(404).type('text').send('Installer is disabled.');
     next();
   });
-  if (existsSync(webDir)) { app.use(express.static(webDir,{index:false,setHeaders:(res,file)=>res.setHeader('Cache-Control',staticCachePolicy(file,webDir))})); app.get('/{*path}',(req,res)=>{res.setHeader('Cache-Control',/^\/install\/?$/i.test(req.path)?'no-store':'no-cache');res.sendFile(`${webDir}/index.html`);}); }
+  if (existsSync(webDir)) { app.use(express.static(webDir,{index:false,setHeaders:(res,file)=>res.setHeader('Cache-Control',staticCachePolicy(file,webDir))})); app.get('/{*path}',(req,res)=>{res.setHeader('Cache-Control',/^\/(install|waiting)\/?$/i.test(req.path)?'no-store':'no-cache');res.sendFile(`${webDir}/index.html`);}); }
   app.use(async (error:unknown,req:express.Request,res:express.Response,_next:express.NextFunction)=>{
     const reason=error instanceof HttpError ? error.code ?? `HTTP_${error.status}` : error instanceof z.ZodError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
     securityFailure(req,reason);
-    if (config.configured && !config.installEnabled && !req.auditRecorded && !req.path.startsWith('/api/install') && !(error instanceof HttpError && [401,429,503].includes(error.status))) {
+    if (config.configured && !config.installEnabled && !req.auditRecorded && !req.path.startsWith('/api/install') && !req.path.startsWith('/api/queue/') && !(error instanceof HttpError && [401,429,503].includes(error.status))) {
       await audit(req,'http.request.failure',req.path.slice(0,255),{failure_reason:error instanceof HttpError ? error.code ?? `HTTP_${error.status}` : error instanceof z.ZodError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR',method:req.method}).catch(()=>{console.error('Audit enqueue failed');});
     }
     if (error instanceof z.ZodError) return res.status(400).json({error:error.issues[0]?.message ?? 'ข้อมูลไม่ถูกต้อง',code:'VALIDATION_ERROR'});

@@ -42,11 +42,11 @@ export function createAuditModel(db: AuditDatabase = { query, execute, transacti
       });
     },
 
-    async getAuditQueueHealth(): Promise<AuditQueueHealth> {
+    async getAuditQueueHealth(connection?: PoolConnection): Promise<AuditQueueHealth> {
       const [row] = await db.query<{ pending: string | number; oldestAgeSeconds: string | number | null }>(`
         SELECT COUNT(*) AS pending,
                GREATEST(0, TIMESTAMPDIFF(SECOND, MIN(created_at), UTC_TIMESTAMP(3))) AS oldestAgeSeconds
-          FROM audit_outbox`);
+          FROM audit_outbox`, [], connection);
       return { pending: Number(row?.pending ?? 0), oldestAgeSeconds: Number(row?.oldestAgeSeconds ?? 0) };
     },
   };

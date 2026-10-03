@@ -4,7 +4,7 @@ import { hashToken } from '../services/crypto.js';
 import { sharedRateLimit } from '../services/rateLimitStore.js';
 import { HttpError } from './security.js';
 
-export function requireService(scope:'identity:read'|'token:introspect'):RequestHandler {
+export function requireService(scope:'identity:read'|'token:introspect'|'token:revoke'):RequestHandler {
   return async(req,res,next)=>{
     const raw=req.get('X-API-Key');
     if(!raw || !/^[A-Za-z0-9_.~-]{32,256}$/.test(raw)) throw new HttpError(401,'Valid API key required','invalid_client');

@@ -1,5 +1,7 @@
 # CUSA SSO
 
+อัปเดต 4 ตุลาคม 2026: งานดูแลระบบรันใน Node ด้วย `BACKGROUND_JOBS_ENABLED=true`; เพิ่ม FIFO ราย Service (ปิดเป็นค่าเริ่มต้น ต้อง migrate `007_waiting_room.sql`), logout ทุกอุปกรณ์ของตนเอง และ API ถอน token เฉพาะ Service อ่าน [คู่มือคิวและ Session](docs/WAITING-ROOM.md) กับ [วิธีอัปเกรด HostAtom](docs/HOSTATOM-RELEASE.md) ก่อนเปิดใช้
+
 ส่วนขยายล่าสุด: [Passkeys, LINE และ Firebase SMS](docs/ADDITIONAL-FACTORS.md), [ผลทบทวน Delta Blueprint](docs/DELTA-REVIEW.md), [แพ็กเกจและขั้นตอนอัปโหลด HostAtom](docs/HOSTATOM-RELEASE.md)
 
 ระบบ User Management และ SSO ด้วย **Node.js / Express + React + MariaDB** ตามโครงสร้าง **MVC** พร้อมหน้าเว็บภาษาไทย รองรับ Google Login, Email OTP, Authenticator TOTP, recovery codes, allowlist, API keys และ API ยืนยันตัวตนสำหรับระบบภายใน
@@ -117,7 +119,7 @@ TOTP และ OTP policy อ้างอิงแนวทาง [OWASP Passwor
 
 รอบ Security / OTP / MFA recovery: อ่าน [ขั้นตอนอัปเกรด](docs/SECURITY-UPGRADE.md) ก่อน deploy ฐานเดิม ต้องรัน migration 004–006 โดยไม่เปิด installer ซ้ำ ใช้ [API reference](docs/SSO-INTEGRATION.md), [OpenAPI 3.1](web/public/openapi.json) และ [ขั้นตอนกู้คืน MFA พร้อมหลักฐาน](docs/MFA-RESET.md) สำหรับการตั้งค่าใหม่
 
-หน้า MFA รับคำขอจากเจ้าของบัญชีที่ผ่าน Google Login ผู้ดูแลต้องยืนยัน TOTP ใหม่ก่อนเปิดภาพ/อนุมัติ ภาพถูกใส่ลายน้ำและเข้ารหัสด้วย `MFA_EVIDENCE_KEY` แยกต่างหาก เก็บนอก public และลบภายใน 7 วันหลังตัดสินใจ ต้องตั้ง Scheduled Task และยกเว้น directory นี้จาก backup/snapshot ตามคู่มือก่อนรับเอกสารจริง
+หน้า MFA รับคำขอจากเจ้าของบัญชีที่ผ่าน Google Login ผู้ดูแลต้องยืนยัน TOTP ใหม่ก่อนเปิดภาพ/อนุมัติ ภาพถูกใส่ลายน้ำและเข้ารหัสด้วย `MFA_EVIDENCE_KEY` แยกต่างหาก เก็บนอก public และตั้งกำหนดลบภายใน 7 วันหลังตัดสินใจ เปิด `BACKGROUND_JOBS_ENABLED=true` ให้ Node ทำงานลบทุก 15 นาทีและติดตามผลตามคู่มือ พร้อมยกเว้น directory นี้จาก backup/snapshot งานภายในจะหยุดเมื่อ process หยุด; การรักษา deadline ต้องมี process ที่ทำงานต่อเนื่องหรือ scheduler ภายนอก
 
 อ่าน [คู่มือเชื่อมต่อ SSO](docs/SSO-INTEGRATION.md) และ [คู่มือ Audit](docs/AUDIT-OPERATIONS.md) สำหรับ BFF, PKCE, introspection, CORS และ archive
 
@@ -148,6 +150,6 @@ Database integration tests จะข้ามเมื่อไม่มี `RUN
 
 Docker deployment มี `Dockerfile`, `compose.yaml` และ Caddy สำหรับ HTTPS ตั้ง `APP_ORIGIN=https://YOUR_DOMAIN`, `SSO_DOMAIN`, credentials, verified DB TLS และ DNS ให้พร้อม รัน migration ด้วย role ที่มี DDL ก่อน จากนั้น `docker compose up --build -d` ตรวจ `/api/ready` หลังเริ่มระบบ หากใช้ custom CA ให้ mount file เข้า container ที่ `DB_CA_FILE` ระบุ Compose ไม่เปิด port ของ app หรือ Redis สู่ภายนอกโดยตรง
 
-ตั้ง scheduled job รัน `npm run db:cleanup -w server` หรือ production `node server/dist/scripts/cleanup.js` เป็นระยะเพื่อลบเฉพาะ session/token/flow/rate counters ที่หมดอายุเป็น batch คำสั่งนี้ไม่ลบ audit logs หรือข้อมูลผู้ใช้
+`BACKGROUND_JOBS_ENABLED=true` (ค่าเริ่มต้น) เปิดงานภายใน Node: ลบหลักฐานทุก 15 นาที, ตรวจสุขภาพทุก 5 นาที และล้าง session/token/flow/rate counters ที่หมดอายุทุก 60 นาที ทุกงานตรวจข้อมูลค้างเมื่อเริ่ม process ใช้ MariaDB advisory lock กันงานซ้อนและเขียนผลใน `background.job.*` ดู [คู่มือ HostAtom](docs/HOSTATOM-RELEASE.md) คำสั่ง `npm run db:cleanup` ยังใช้รันมือได้ งานล้าง credential ไม่ลบ audit logs หรือข้อมูลผู้ใช้ ไม่มีการรันต่อระหว่าง process หยุด
 
 ก่อนเปิดบริการจริงยังต้องทดสอบ Google/Gmail กับ credentials จริง, ทดสอบ network/TLS ของ MariaDB, สำรองและกู้คืนข้อมูล/keys, load test และตรวจ security โดยผู้ดูแล deployment นี้ยังไม่ได้เชื่อมต่อ host จริงหรือ deploy ให้คุณ

@@ -20,7 +20,7 @@ Email OTP ไม่กลายเป็น fallback สำหรับบัญ
 - เพิ่มสิทธิ์เฉพาะ 4 ตารางใหม่ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) แล้วเปลี่ยนกลับบัญชี runtime
 - `.env` อยู่ที่ Application Root นอก Document Root สิทธิ์ 0600; ไม่ส่ง Secret ผ่านแชต, Git, URL หรือ frontend
 - ตัวอย่างและ `.env` ในเครื่องเพิ่มชื่อช่องให้แล้ว แต่ยังปิด LINE/Firebase จนกว่าจะใส่ค่าจริงและทดสอบ ไม่เปลี่ยน Google/Gmail keys เดิม
-- ตั้ง `db:cleanup` ทุกชั่วโมงเพื่อล้าง challenge หมดอายุและ credential ชั่วคราวตาม [คู่มือ HostAtom](HOSTATOM-RELEASE.md)
+- ตั้ง `BACKGROUND_JOBS_ENABLED=true` ให้ Node ล้าง challenge/credential หมดอายุทุกชั่วโมง พร้อมงานลบหลักฐานและตรวจสุขภาพตาม [คู่มือ HostAtom](HOSTATOM-RELEASE.md); `db:cleanup` ยังใช้รันมือได้
 
 ## Passkeys
 

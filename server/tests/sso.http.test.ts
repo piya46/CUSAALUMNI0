@@ -201,7 +201,8 @@ test('userinfo actual CORS origin must match the token application, even for ano
 test('login context shows registered branding only, validates PKCE/callback and does not issue credentials', async () => {
   let issued = false;
   const app = makeApp({ issueAuthorizationCode: async () => { issued = true; return code; } });
-  const response = await request(app).get('/api/sso/login-context').query(authorizeParams({ name: 'Spoofed service' }));
+  await request(app).get('/api/sso/login-context').query(authorizeParams({ name: 'Spoofed service' })).expect(400);
+  const response = await request(app).get('/api/sso/login-context').query(authorizeParams());
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.application, { name: 'People Portal', origin: 'https://portal.example.com' });
   assert.equal(new URL(response.body.returnTo, 'https://sso.example.com').pathname, '/api/sso/authorize');

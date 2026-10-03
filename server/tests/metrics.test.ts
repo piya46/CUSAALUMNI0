@@ -10,6 +10,6 @@ test('metrics requires a dedicated bearer credential and exposes bounded process
     config.metricsToken='';await request(app).get('/api/metrics').expect(404);
     config.metricsToken='x'.repeat(43);await request(app).get('/api/metrics').expect(401);await request(app).get('/api/metrics?token='+config.metricsToken).expect(401);
     const result=await request(app).get('/api/metrics').set('Authorization',`Bearer ${config.metricsToken}`).expect(200);
-    assert.match(result.text,/process_resident_memory_bytes \d+/);assert.equal(result.headers['cache-control'],'no-store');assert.ok(!result.text.includes(config.metricsToken));assert.ok(!result.text.includes('user_id'));
+    assert.match(result.text,/process_resident_memory_bytes \d+/);assert.match(result.text,/cusa_background_scheduler_running 0/);assert.equal(result.headers['cache-control'],'no-store');assert.ok(!result.text.includes(config.metricsToken));assert.ok(!result.text.includes('user_id'));
   }finally{config.metricsToken=old;}
 });

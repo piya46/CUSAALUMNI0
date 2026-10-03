@@ -9,8 +9,8 @@
 3. ตั้ง `MFA_EVIDENCE_DIR` เป็น absolute path ของโฟลเดอร์ส่วนตัวที่ Node เขียนได้ เช่น `<APPLICATION_ROOT>/var/mfa-evidence` ค่า relative อ้างจาก Application Root ห้ามอยู่ใต้ Document Root, public, web/public, web/dist หรือ server/dist
 4. Directory ใช้ 0700 และไฟล์ 0600 ต้องเป็น local/private filesystem ที่รองรับ atomic exclusive create และ no-follow symlink การรันหลาย instance ต้องเห็น directory เดียวกันและใช้กุญแจเดียวกัน หรือออกแบบ private object storage adapter ก่อน scale
 5. **ไม่สำรอง directory นี้ รวมทั้ง `.enc` และ `.key`** ออกจาก Plesk backup และ Host/VM snapshots ด้วย ให้ HostAtom ยืนยันขอบเขต snapshot หาก provider เก็บทั้งไฟล์และกุญแจไว้ ระบบแอปเพียงอย่างเดียวไม่สามารถรับรองการทำลายทุกสำเนาภายใน 7 วันได้ ต้องแก้ขอบเขต backup ก่อนเปิดรับภาพจริง
-6. ตั้ง Scheduled Task ทุก 15 นาทีจาก Application Root: `node server/dist/scripts/purgeMfaEvidence.js` ใช้ Node ตัวเดียวกับ Plesk และ user ที่อ่าน `.env`/เขียน directory ได้ ไม่ใส่ secret ใน command line ตัวอย่าง cron: `*/15 * * * *` โดยกำหนด working directory ให้ตรง
-7. ตั้ง Scheduled Task `node server/dist/scripts/operationsCheck.js` ทุก 1–5 นาที แล้วส่ง exit code ที่ไม่ใช่ 0 / structured critical log เข้า alert ของผู้ดูแล งานนี้ตรวจเอกสารเกินกำหนดด้วย การเขียนคู่มือไม่ได้สร้าง Scheduled Task ให้บน Host
+6. ตั้ง `BACKGROUND_JOBS_ENABLED=true` แล้ว Restart App: Node จะลบหลักฐานเมื่อเริ่มแอปและทุก 15 นาที ใช้ `GET_LOCK` กันงานซ้อนกับ process อื่นและ CLI ไม่ต้องใช้ Plesk Cron ในโหมดนี้ ดู [คู่มือ HostAtom](HOSTATOM-RELEASE.md)
+7. Node ตรวจสุขภาพระบบและเอกสารเกินกำหนดทุก 5 นาทีด้วย ติดตาม `background.job.failed` ใน stderr หรือ metrics ของแต่ละ process และตั้ง alert ผ่านระบบที่ Host รองรับ การเปิดงานภายในไม่ได้ส่งอีเมลแจ้งเตือนโดยอัตโนมัติ หากต้องรันภายนอกใช้ `node server/dist/scripts/operationsCheck.js` ได้
 8. ทดสอบด้วยภาพจำลองก่อนรับเอกสารจริง: ส่ง → เปิดตรวจ → อนุมัติ/ปฏิเสธ → ตรวจการเพิกถอน → ทดสอบ purge ใน staging โดยปรับ deadline เฉพาะข้อมูลจำลอง
 
 ขั้นตอนเลือกเมนูและตั้ง Cron บน HostAtom อยู่ใน [คู่มือ release](HOSTATOM-RELEASE.md) ตรวจ `Run Now` ด้วย เนื่องจาก task อาจเห็น Node path และ environment ต่างจาก web process
@@ -41,7 +41,7 @@
 | อัปโหลดล้มเหลว | รอบ cleanup ถัดไป |
 | process หยุดกลางอัปโหลด | เก็บแถว uploading ไว้ติดตามและ cleanup หลัง 1 ชั่วโมง |
 
-Worker ภายในแอปรันตอน startup และทุก 15 นาที แต่ Plesk อาจพัก process จึงต้องมี Scheduled Task ภายนอกด้วย Worker เริ่มลบล่วงหน้า 1 ชั่วโมงก่อน deadline เป็นระยะเผื่อ ห้ามอ่านรูปตั้งแต่ deadline แม้ job ยังทำไม่สำเร็จ ลบ `.key` ก่อน `.enc` ทำซ้ำได้หลัง crash/rollback และบันทึก `purged_at` กับ `mfa.reset.evidence.destroyed` โดยไม่เก็บภาพใน audit
+Worker ภายในแอปรันตอน startup และทุก 15 นาทีเมื่อเปิด `BACKGROUND_JOBS_ENABLED` แต่ Plesk อาจพัก process งานจะกลับมาตรวจข้อมูลค้างเมื่อ process เริ่มใหม่ การรับประกัน deadline ระหว่าง downtime ต้องมี process ที่ทำงานตลอดหรือ scheduler ภายนอกตาม [คู่มือ HostAtom](HOSTATOM-RELEASE.md) Worker เริ่มลบล่วงหน้า 1 ชั่วโมงก่อน deadline เป็นระยะเผื่อ ห้ามอ่านรูปตั้งแต่ deadline แม้ job ยังทำไม่สำเร็จ ลบ `.key` ก่อน `.enc` ทำซ้ำได้หลัง crash/rollback และบันทึก `purged_at` กับ `mfa.reset.evidence.destroyed` โดยไม่เก็บภาพใน audit
 
 หนึ่งรอบทำไม่เกิน 100 คำขอ ใช้ `FOR UPDATE SKIP LOCKED` ต่อคำขอ ตรวจ backlog/พื้นที่ disk และเพิ่มความถี่หากปริมาณมาก การหยุด Host/job หรือ filesystem เสียทำให้ลบไม่สำเร็จ ต้อง alert และแก้ทันที ห้ามอ้างว่าการหมดอายุใน DB เท่ากับทำลายไฟล์แล้ว
 

@@ -7,9 +7,9 @@ export const legalOrganization = {
   email: 'support.scicualumni@gmail.com',
 };
 
-export const legalVersion = '1.2';
-export const legalUpdatedAt = '2026-09-30';
-export const legalUpdatedLabel = '30 กันยายน 2569';
+export const legalVersion = '1.3';
+export const legalUpdatedAt = '2026-10-04';
+export const legalUpdatedLabel = '4 ตุลาคม 2569';
 export type LegalPageKind = 'privacy' | 'terms';
 
 export const legalSources = {
