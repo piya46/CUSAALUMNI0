@@ -45,7 +45,7 @@
 | Auto-ban 24 ชั่วโมง | คง user+IP quotas, OTP cooldown และ lock MFA หลังผิด 5 ครั้ง 15 นาที | การแบน IP ยาวจากเหตุการณ์ไม่กี่ครั้งกระทบผู้ใช้ร่วม NAT; เส้นทาง proxy ต้องเชื่อเฉพาะที่ตรวจแล้ว |
 | Off-site backups | ระบุ runbook ให้ใช้ Host/Plesk scheduler และระบบสำรองที่ดูแลได้ | node-cron อาจไม่ทำงานเมื่อ Passenger หลับ/restart; ยังไม่มีปลายทาง bucket/IAM/restore approval สำหรับสำรองจริง |
 | Passkeys | เพิ่มจริงเป็น MFA หลัง Google | ตรวจ signature, RP/origin, UV, challenge/counter; ไม่กล่าวอ้างกำจัด phishing 100% |
-| LINE Number Matching | เพิ่มจริงเป็นวิธีทางเลือกหลังผูกด้วย TOTP | ไม่บังคับทุกคนย้ายจาก TOTP; signed webhook + account/session binding; เปิดด้วย provider credentials |
+| LINE Number Matching | เพิ่มจริงเป็นวิธีทางเลือกหลังผูกด้วย TOTP หรือ Passkey ที่ยืนยันแล้ว | ไม่บังคับทุกคนย้ายจาก TOTP; signed webhook + account/session binding; เปิดด้วย provider credentials |
 | First-time SMS | เพิ่ม Firebase Phone Auth ตามบริการของผู้ใช้ | ยืนยันการถือครองเบอร์ ไม่ใช่ KYC/หนึ่งคนหนึ่งเบอร์; required เปิดเฉพาะบัญชีใหม่; quota ต้องคุมที่ Firebase |
 | MFA fallback | คง Google, TOTP, Recovery และ Email OTP ตามนโยบายเดิม | บัญชี TOTP ไม่ลดระดับเป็น Email OTP อัตโนมัติเมื่อ LINE ล่ม |
 | Dynamic branding | คงชื่อ Service และ origin ที่ลงทะเบียน, แบรนด์หลัก CUSA SSO | ไม่รับ logo/color/redirect จาก query ของผู้โจมตี; การเพิ่ม asset upload ต้องออกแบบ validation/storage เพิ่ม ยังไม่ได้เพิ่มธีมตาม Service |
@@ -56,7 +56,7 @@
 | Single Logout webhooks | ยังไม่เปิด webhook SLO | ต้องตรวจ callback SSRF, signing, delivery retries/idempotency; ปัจจุบันถอน token/session ที่ SSO แล้ว BFF ตรวจ introspection ภายใน window ที่กำหนด |
 | PDPA consent versions | เพิ่ม version 1.2 และ version/purpose ในการรับทราบ Firebase; ไม่บังคับ consent ครอบทุกเรื่อง | Privacy notice acknowledgement, terms และ optional consent เป็นคนละเรื่อง; ไม่มีระบบ Admin publish consent version สำหรับทุกกิจกรรมในรุ่นนี้ |
 | Metrics | เพิ่ม Prometheus endpoint ที่ใช้ dedicated Bearer token | ไม่ใช้ “URL ลับ” เป็นการควบคุมสิทธิ์; เปิดเฉพาะเมื่อใส่ METRICS_TOKEN |
-| Admin kill switch | เพิ่มถอน session/token ทุกอุปกรณ์โดยคง account/roles/MFA | ต้อง TOTP สดและ audit ใน transaction; หากต้องห้าม login ใหม่ให้ถอน allowlist |
+| Admin kill switch | เพิ่มถอน session/token ทุกอุปกรณ์โดยคง account/roles/MFA | ต้อง TOTP หรือ Passkey สดและ audit ใน transaction; หากต้องห้าม login ใหม่ให้ถอน allowlist |
 | MFA bypass code | ไม่เพิ่ม | จะตัดผ่านกระบวนการกู้ MFA ที่มีหลักฐานและผู้อนุมัติ ใช้ Recovery code/คำขอรีเซ็ตที่มีอยู่ |
 
 ## Cache และ single-host capacity
@@ -73,7 +73,7 @@ Node ส่ง `Cache-Control: public, max-age=31536000, immutable` เฉพา
 
 ค่าที่ส่ง: process user/system CPU seconds, RSS, Node heap, uptime, audit-worker running/consecutive failures ไม่มีรายชื่อผู้ใช้ IP token payload หรือ environment secret ค่านี้เป็น **process ที่รับ request เท่านั้น** ไม่ใช่ CPU/RAM ของ Host ทั้งเครื่องหรือผลรวมทุก Passenger worker; Grafana ควรอ่านจาก Prometheus และมีระบบภายนอกตรวจ `/api/ready`, scheduled-job failures และ audit backlog ผ่าน `ops:check` ด้วย
 
-หน้า Users มี **ออกจากระบบทุกอุปกรณ์** API `DELETE /api/admin/users/:id/sessions` ยกเลิก session, token และ authorization codes ภายใน transaction เดียวกับ audit ไม่ลบ user, allowlist, membership หรือ roles หาก outboxเขียนไม่ได้การถอนทั้งหมด rollback เซสชันผู้ดูแลต้อง full/TOTPไม่เกิน5นาที; frontendไม่ให้กดบัญชีตัวเองจากหน้านี้ ใช้หน้าเซสชันของตัวเองได้ การ introspection cache อาจทำให้ระบบลูกเห็นผลช้าไม่เกิน5วินาที; ใช้TTL0เมื่อต้องตรวจทันที และระบบลูกต้องไม่เก็บผลนานกว่าที่ตกลง
+หน้า Users มี **ออกจากระบบทุกอุปกรณ์** API `DELETE /api/admin/users/:id/sessions` ยกเลิก session, token และ authorization codes ภายใน transaction เดียวกับ audit ไม่ลบ user, allowlist, membership หรือ roles หาก outboxเขียนไม่ได้การถอนทั้งหมด rollback เซสชันผู้ดูแลต้อง full session ที่ผ่าน TOTP หรือ Passkey ไม่เกิน 5 นาที; frontendไม่ให้กดบัญชีตัวเองจากหน้านี้ ใช้หน้าเซสชันของตัวเองได้ การ introspection cache อาจทำให้ระบบลูกเห็นผลช้าไม่เกิน5วินาที; ใช้TTL0เมื่อต้องตรวจทันที และระบบลูกต้องไม่เก็บผลนานกว่าที่ตกลง
 
 ## สิ่งที่ยังต้องตัดสินใจก่อนขยาย protocol/infrastructure
 

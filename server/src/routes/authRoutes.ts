@@ -32,6 +32,8 @@ authRouter.post('/otp/verify',rateLimit('mfa-verify',10,600),validateBody(emailC
 authRouter.post('/totp/verify',rateLimit('mfa-verify',10,600),validateBody(codeSchema),c.totpVerify);
 authRouter.post('/recovery/verify',rateLimit('mfa-verify',10,600),validateBody(recoverySchema),c.recoveryVerify);
 authRouter.use(requireAuth);
+authRouter.post('/passkeys/reauth/options',rateLimit('passkey-options',10,600),factors.reauthenticateOptions);
+authRouter.post('/passkeys/reauth/verify',rateLimit('mfa-verify',10,600),factors.reauthenticateVerify);
 authRouter.post('/passkeys/register/options',rateLimit('factor-manage',10,600),factors.registerOptions);
 authRouter.post('/passkeys/register/verify',rateLimit('factor-manage',10,600),factors.registerVerify);
 authRouter.delete('/passkeys/:id',rateLimit('factor-manage',10,600),factors.deletePasskey);

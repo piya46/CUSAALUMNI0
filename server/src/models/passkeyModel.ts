@@ -44,34 +44,50 @@ export async function registerPasskey(sessionId:string,id:string,name:string,res
     await record(conn,'mfa.passkey.registered',session.user_id,{name});return true;
   });
 }
-export async function authenticationOptions(sessionId:string){
+type AuthenticationPurpose = 'login' | 'reauth';
+export async function authenticationOptions(sessionId:string,purpose:AuthenticationPurpose='login'){
   enabled();return transaction(async conn=>{
-    const session=await lockFactorSession(sessionId,conn,'pending');
+    const session=await lockFactorSession(sessionId,conn,purpose==='login'?'pending':'reauth');
     const keys=await query<FactorRow>('SELECT credential_id,transports FROM passkeys WHERE user_id=?',[session.user_id],conn);
     if(!keys.length)throw new HttpError(409,'บัญชีนี้ยังไม่มี Passkey','PASSKEY_UNAVAILABLE');
     const options=await generateAuthenticationOptions({rpID:rpID(),userVerification:'required',timeout:120000,allowCredentials:keys.map(k=>({id:k.credential_id,transports:transports(k.transports)}))});
-    const challengeId=await createFactorChallenge(sessionId,'passkey_auth',{challenge:options.challenge,factor:factorFingerprint(session)},conn);
+    const challengeId=await createFactorChallenge(sessionId,'passkey_auth',{challenge:options.challenge,factor:factorFingerprint(session),purpose},conn);
     return {challengeId,options};
   });
 }
-export async function authenticatePasskey(sessionId:string,id:string,response:AuthenticationResponseJSON,record:AuthAudit){
+async function verifyPasskey(sessionId:string,id:string,response:AuthenticationResponseJSON,record:AuthAudit,purpose:AuthenticationPurpose){
   enabled();return transaction(async conn=>{
-    const session=await lockFactorSession(sessionId,conn,'pending');
+    const session=await lockFactorSession(sessionId,conn,purpose==='login'?'pending':'reauth');
     const challenge=await factorChallenge(id,sessionId,'passkey_auth',conn);
     if(!challenge)return null;
     await execute("UPDATE factor_challenges SET status='used' WHERE id=?",[id],conn);
     const [key]=await query<FactorRow>('SELECT * FROM passkeys WHERE credential_hash=? AND user_id=? FOR UPDATE',[hashToken(response.id),session.user_id],conn);
     let result;
     try{
-      if(!key || challenge.data.factor!==factorFingerprint(session))throw new Error();
+      if(!key || challenge.data.purpose!==purpose || challenge.data.factor!==factorFingerprint(session))throw new Error();
       if(response.response.userHandle && response.response.userHandle!==Buffer.from(session.user_id).toString('base64url'))throw new Error();
       result=await verifyAuthenticationResponse({response,expectedChallenge:challenge.data.challenge,expectedOrigin:config.appOrigin,expectedRPID:rpID(),requireUserVerification:true,
         credential:{id:key.credential_id,publicKey:new Uint8Array(key.public_key),counter:Number(key.counter),transports:transports(key.transports)}});
     }catch{result=null;}
     if(!result?.verified){await failure(session.user_id,conn,record);return null;}
     await execute('UPDATE passkeys SET counter=?,backed_up=?,last_used_at=UTC_TIMESTAMP(3) WHERE id=?',[result.authenticationInfo.newCounter,result.authenticationInfo.credentialBackedUp,key.id],conn);
+    if(purpose==='reauth'){
+      // Refresh assurance only; preserve the session token, CSRF token and expiry
+      // so a suspended, CSRF-protected operation can safely retry once.
+      await execute("UPDATE sessions SET mfa_method='passkey',authenticated_at=UTC_TIMESTAMP(3) WHERE id=?",[sessionId],conn);
+      await execute('UPDATE users SET mfa_failed_attempts=0,mfa_locked_until=NULL WHERE id=?',[session.user_id],conn);
+      await record(conn,'auth.reauth.success',session.user_id,{method:'passkey'});
+      return true;
+    }
     return promote(sessionId,session.user_id,'passkey',conn,record);
   });
+}
+export async function authenticatePasskey(sessionId:string,id:string,response:AuthenticationResponseJSON,record:AuthAudit){
+  const token=await verifyPasskey(sessionId,id,response,record,'login');
+  return typeof token==='string'?token:null;
+}
+export async function reauthenticatePasskey(sessionId:string,id:string,response:AuthenticationResponseJSON,record:AuthAudit){
+  return await verifyPasskey(sessionId,id,response,record,'reauth')===true;
 }
 export async function deletePasskey(sessionId:string,id:string,record:AuthAudit){
   return transaction(async conn=>{

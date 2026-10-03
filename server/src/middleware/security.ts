@@ -5,6 +5,7 @@ import { hashToken, safeEqual } from '../services/crypto.js';
 import { findSession, recordAudit, isMfaLocked } from '../models/authModel.js';
 import { auditContext, rateIp } from './requestContext.js';
 import { sharedRateLimit } from '../services/rateLimitStore.js';
+import { hasAdminMfa, isFreshStrongMfa } from '../services/mfaPolicy.js';
 
 export class HttpError extends Error { constructor(public status: number, message: string, public code?: string) { super(message); } }
 export const sessionCookie = config.secureCookies ? '__Host-cusa_session' : 'cusa_session';
@@ -33,7 +34,7 @@ export function requireFullSession(req:Request,_res:Response,next:NextFunction){
 }
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (req.identity?.kind !== 'full' || req.identity.role !== 'admin') throw new HttpError(403, 'เฉพาะผู้ดูแลระบบ', 'FORBIDDEN');
-  if (!req.identity.totpEnabled || req.identity.mfaMethod!=='totp') throw new HttpError(403,'ผู้ดูแลต้องตั้งค่าและยืนยันด้วย Authenticator ก่อนใช้งาน','ADMIN_MFA_REQUIRED');
+  if (!hasAdminMfa(req.identity)) throw new HttpError(403,'ผู้ดูแลต้องตั้งค่า MFA และยืนยันด้วย Passkey หรือ Authenticator ก่อนใช้งาน','ADMIN_MFA_REQUIRED');
   next();
 }
 export function requireRecentAdminMfa(req:Request,res:Response,next:NextFunction) {
@@ -41,9 +42,8 @@ export function requireRecentAdminMfa(req:Request,res:Response,next:NextFunction
   return requireFreshMfa(req,res,next);
 }
 export function requireFreshMfa(req:Request,_res:Response,next:NextFunction) {
-  const at=req.identity?.authenticatedAt?new Date(req.identity.authenticatedAt).getTime():NaN;
-  if (!Number.isFinite(at)||at>Date.now()+10_000||Date.now()-at>300_000) {
-    throw new HttpError(403,'กรุณายืนยัน Authenticator อีกครั้งก่อนเปลี่ยนสิทธิ์','MFA_REAUTH_REQUIRED');
+  if (req.identity?.kind !== 'full' || !isFreshStrongMfa(req.identity.mfaMethod,req.identity.authenticatedAt)) {
+    throw new HttpError(403,'กรุณายืนยัน Passkey หรือ Authenticator อีกครั้งก่อนดำเนินรายการสำคัญ','MFA_REAUTH_REQUIRED');
   }
   next();
 }

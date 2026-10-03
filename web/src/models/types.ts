@@ -1,7 +1,7 @@
 export type Page = 'mfaRequests' | 'overview' | 'users' | 'allowlist' | 'applications' | 'serviceAccess' | 'keys' | 'security' | 'sessions' | 'audit' | 'integration';
 export interface User { firstName?: string; lastName?: string; id: string; email: string; name: string; avatar?: string | null; role: 'admin' | 'user'; totpEnabled: boolean; lastLoginAt?: string | null; createdAt?: string }
 export interface OtpState {reference:string|null;expiresAt:string|null;retryAfter:number}
-export interface Identity { phoneRequired?:boolean; factors?:{passkey:boolean;line:boolean;phoneVerified:boolean}; otp?:OtpState;adminMfaRequired?:boolean; user: User; csrfToken: string; requiresMfa: boolean; mfaMethod: 'totp' | 'email' | 'recovery' | 'passkey' | 'line' | null; status?: 'mfa_required' | 'authenticated'; recoveryCodesRemaining?: number }
+export interface Identity { phoneRequired?:boolean; factors?:{passkey:boolean;line:boolean;phoneEnabled?:boolean;phoneVerified:boolean}; otp?:OtpState;adminMfaRequired?:boolean; user: User; csrfToken: string; requiresMfa: boolean; mfaMethod: 'totp' | 'email' | 'recovery' | 'passkey' | 'line' | null; status?: 'mfa_required' | 'authenticated'; recoveryCodesRemaining?: number }
 export interface AllowedEmail { id: string; email: string; role: 'admin' | 'user'; createdAt: string }
 export interface Application { id: string; name: string; description: string; redirectUri: string; createdAt: string; revokedAt: string | null }
 export interface ApiKey { id: string; applicationId: string; name: string; prefix: string; scopes: string[]; createdAt: string; expiresAt: string; lastUsedAt: string | null; revokedAt: string | null }

@@ -20,13 +20,19 @@ function complete(res:Response,token:string|null){if(!token)throw new HttpError(
 async function cooldown<T>(res:Response,work:()=>Promise<T>){try{return await work();}catch(error){if(error instanceof OtpCooldownError){res.setHeader('Retry-After',error.retryAfter);throw new HttpError(429,'กรุณารอครบ 60 วินาทีก่อนขอใหม่','OTP_COOLDOWN');}throw error;}}
 export async function factorStatus(userId:string){
   const [row]=await query<Record<string,any>>('SELECT EXISTS(SELECT 1 FROM passkeys WHERE user_id=?) AS passkey,EXISTS(SELECT 1 FROM line_identities WHERE user_id=?) AS line,EXISTS(SELECT 1 FROM phone_identities WHERE user_id=?) AS phone',[userId,userId,userId]);
-  return {passkey:config.passkeyEnabled&&Boolean(row.passkey),line:config.lineMfaEnabled&&Boolean(row.line),phoneVerified:Boolean(row.phone)};
+  return {passkey:config.passkeyEnabled&&Boolean(row.passkey),line:config.lineMfaEnabled&&Boolean(row.line),phoneEnabled:config.firebasePhoneEnabled,phoneVerified:Boolean(row.phone)};
 }
 export async function settings(req:Request,res:Response){res.json({...(await factorStatus(req.identity!.userId)),passkeyEnabled:config.passkeyEnabled,lineEnabled:config.lineMfaEnabled,phoneEnabled:config.firebasePhoneEnabled,passkeys:await passkey.listPasskeys(req.identity!.userId),...(config.firebasePhoneEnabled?{firebase:firebaseWebConfig()}:{})});}
 export async function registerOptions(req:Request,res:Response){res.json(await passkey.registrationOptions(req.identity!.sessionId,record(req)));}
 export async function registerVerify(req:Request,res:Response){const b=proofSchema.extend({name:z.string().trim().min(1).max(80)}).strict().parse(req.body);if(!await passkey.registerPasskey(req.identity!.sessionId,b.challengeId,b.name,b.response as RegistrationResponseJSON,record(req)))throw new HttpError(400,'ลงทะเบียน Passkey ไม่สำเร็จ กรุณาเริ่มใหม่','INVALID_PROOF');res.status(201).json({ok:true});}
 export async function authenticateOptions(req:Request,res:Response){res.json(await passkey.authenticationOptions(req.identity!.sessionId));}
 export async function authenticateVerify(req:Request,res:Response){const b=z.object({challengeId:id,response:authenticateProof}).strict().parse(req.body);complete(res,await passkey.authenticatePasskey(req.identity!.sessionId,b.challengeId,b.response as AuthenticationResponseJSON,record(req)));}
+export async function reauthenticateOptions(req:Request,res:Response){res.json(await passkey.authenticationOptions(req.identity!.sessionId,'reauth'));}
+export async function reauthenticateVerify(req:Request,res:Response){
+  const b=z.object({challengeId:id,response:authenticateProof}).strict().parse(req.body);
+  if(!await passkey.reauthenticatePasskey(req.identity!.sessionId,b.challengeId,b.response as AuthenticationResponseJSON,record(req)))throw new HttpError(401,'การยืนยันไม่ถูกต้อง หมดอายุ หรือถูกใช้แล้ว','INVALID_PROOF');
+  res.json({ok:true});
+}
 export async function deletePasskey(req:Request,res:Response){await passkey.deletePasskey(req.identity!.sessionId,id.parse(req.params.id),record(req));res.json({ok:true});}
 export async function lineStart(req:Request,res:Response){res.json(await line.lineLinkStart(req.identity!.sessionId,record(req)));}
 export async function lineCallback(req:Request,res:Response){

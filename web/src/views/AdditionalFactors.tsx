@@ -13,12 +13,18 @@ import type { Identity } from '../models/types';
 import './additional-factors.css';
 interface Settings {passkeyEnabled:boolean;lineEnabled:boolean;phoneEnabled:boolean;line:boolean;phoneVerified:boolean;passkeys:{id:string;name:string}[];firebase?:{apiKey:string;authDomain:string;projectId:string;appId:string}}
 
-export function AdditionalFactors({identity}:{identity:Identity}){
+export function AdditionalFactors({identity,onIdentityChanged}:{identity:Identity;onIdentityChanged?:()=>Promise<void>}){
   const [settings,setSettings]=useState<Settings|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[name,setName]=useState('Passkey ของฉัน'),[notice,setNotice]=useState('');
   const refresh=()=>api<Settings>('/auth/factors').then(setSettings);
   useEffect(()=>{void refresh().catch(e=>setError(e.message));const state=new URLSearchParams(location.search).get('line');if(state){setNotice(state==='linked'?'ผูก LINE แล้ว กรุณาเพิ่มเพื่อน Official Account เพื่อรับข้อความ':'ผูก LINE ไม่สำเร็จ กรุณาเริ่มใหม่');const url=new URL(location.href);url.searchParams.delete('line');history.replaceState(null,'',url.pathname+url.search+url.hash);}},[]);
-  async function work(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  async function work(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();await refresh();await onIdentityChanged?.();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   const canManage=identity.user.totpEnabled&&identity.mfaMethod!=='recovery';
+  useEffect(()=>{
+    if(!settings?.phoneEnabled)return;
+    const focusPhone=()=>{if(location.hash==='#phone-verification')document.getElementById('phone-verification')?.focus();};
+    focusPhone();window.addEventListener('hashchange',focusPhone);
+    return()=>window.removeEventListener('hashchange',focusPhone);
+  },[settings?.phoneEnabled]);
   async function register(){
     const {startRegistration}=await import('@simplewebauthn/browser');
     const result=await api<{challengeId:string;options:PublicKeyCredentialCreationOptionsJSON}>('/auth/passkeys/register/options','POST',{});
@@ -35,8 +41,8 @@ export function AdditionalFactors({identity}:{identity:Identity}){
       if(settings.line){if(!window.confirm('ถอด LINE และออกจากระบบอุปกรณ์อื่น?'))return;await api('/auth/line/link','DELETE');setNotice('ถอดการผูก LINE แล้ว');}
       else{const {url}=await api<{url:string}>('/auth/line/link','POST',{});window.location.assign(url);}
     })}>{settings.line?'ถอดการผูก LINE':'ผูกบัญชี LINE'}</button>:<p className="field-hint">ผู้ดูแลยังไม่เปิดใช้งาน LINE</p>}</section>
-    {settings?.phoneEnabled&&<section><h3><Smartphone size={22}/>ยืนยันเบอร์มือถือ</h3>{settings.phoneVerified?<p className="factor-success"><Check size={18}/>ยืนยันเบอร์แล้ว · ใช้สำหรับยืนยันเบอร์ครั้งแรก ไม่ใช้แทน MFA</p>:<PhoneVerification settings={settings} onVerified={async()=>{await refresh();setNotice('ยืนยันเบอร์มือถือสำเร็จ บันทึกในบัญชีของคุณแล้ว');}}/>}</section>}
-    {identity.user.role==='admin'&&<p className="field-hint">การจัดการระบบของ Admin ยังคงต้องยืนยัน Authenticator</p>}
+    {settings?.phoneEnabled&&<section><h3 id="phone-verification" tabIndex={-1}><Smartphone size={22}/>ยืนยันเบอร์มือถือ</h3>{settings.phoneVerified?<p className="factor-success"><Check size={18}/>ยืนยันเบอร์แล้ว · ใช้สำหรับยืนยันเบอร์ครั้งแรก ไม่ใช้แทน MFA</p>:<PhoneVerification settings={settings} onVerified={async()=>{await refresh();await onIdentityChanged?.();setNotice('ยืนยันเบอร์มือถือสำเร็จ บันทึกในบัญชีของคุณแล้ว');}}/>}</section>}
+    {identity.user.role==='admin'&&<p className="field-hint">Admin ใช้ Passkey หรือ Authenticator ได้ รายการสำคัญใช้ผลยืนยันภายใน 5 นาที</p>}
   </div></Panel>;
 }
 
@@ -55,14 +61,15 @@ export function ExtraMfa({identity,onVerified}:{identity:Identity;onVerified:()=
     return()=>{alive=false;clearInterval(timer);};
   },[line]);
   async function act(action:()=>Promise<void>){setBusy(true);setError('');try{await action();}catch(e){setError((e as Error).message);if(e instanceof ApiError&&e.retryAfter){const stamp=Date.now();setNow(stamp);setDeadline(stamp+e.retryAfter*1000);}}finally{setBusy(false);}}
-  if(!identity.factors?.passkey&&!identity.factors?.line)return null;
+  const lineAvailable=identity.user.role!=='admin'&&identity.factors?.line;
+  if(!identity.factors?.passkey&&!lineAvailable)return null;
   return <div className="extra-mfa"><p>หรือใช้วิธียืนยันที่ผูกไว้</p>{error&&<p className="inline-error" role="alert">{error}</p>}
-    {identity.factors.passkey&&<button className="button secondary full-width" disabled={busy} onClick={()=>void act(async()=>{
+    {identity.factors?.passkey&&<button className="button secondary full-width" disabled={busy} onClick={()=>void act(async()=>{
       const {startAuthentication}=await import('@simplewebauthn/browser');
       const result=await api<{challengeId:string;options:PublicKeyCredentialRequestOptionsJSON}>('/auth/passkeys/authenticate/options','POST',{});
       const response=await startAuthentication({optionsJSON:result.options});await api('/auth/passkeys/authenticate/verify','POST',{challengeId:result.challengeId,response});await onVerified();
     })}><Fingerprint size={18}/>ยืนยันด้วย Passkey</button>}
-    {identity.factors.line&&<button className="button secondary full-width" disabled={busy||remaining>0} onClick={()=>void act(async()=>{const result=await api<{challengeId:string;number:string;reference?:string;expiresIn:number;retryAfter:number}>('/auth/line/send','POST',{});setLine(result);const stamp=Date.now();setNow(stamp);setDeadline(stamp+result.retryAfter*1000);})}><MessageCircle size={18}/>{remaining?`ขอ LINE ใหม่ได้ใน ${remaining} วินาที`:'ยืนยันผ่าน LINE'}</button>}
+    {lineAvailable&&<button className="button secondary full-width" disabled={busy||remaining>0} onClick={()=>void act(async()=>{const result=await api<{challengeId:string;number:string;reference?:string;expiresIn:number;retryAfter:number}>('/auth/line/send','POST',{});setLine(result);const stamp=Date.now();setNow(stamp);setDeadline(stamp+result.retryAfter*1000);})}><MessageCircle size={18}/>{remaining?`ขอ LINE ใหม่ได้ใน ${remaining} วินาที`:'ยืนยันผ่าน LINE'}</button>}
     {line&&<div className="number-matching" role="status"><p>เปิด LINE แล้วเลือกเลขนี้</p><strong>{line.number}</strong>{line.reference&&<p className="line-reference">Ref: {line.reference}</p>}<small>ใช้สำหรับเข้าสู่ระบบ CUSA SSO · หมดอายุใน 3 นาที<br/>ห้ามบอกเลขให้ผู้อื่นหรืออนุมัติคำขอที่คุณไม่ได้เริ่ม</small></div>}
   </div>;
 }

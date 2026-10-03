@@ -133,7 +133,7 @@ exec --offline --call="node -p 'JSON.stringify({node:process.execPath,version:pr
 
 - ตรวจว่าดาวน์โหลด `.env`, `var/...`, `server/...` ผ่านเว็บไซต์ไม่ได้ (หน้า React fallback ไม่ใช่เนื้อหาไฟล์จริง) ห้ามเลือก Application Root เป็น Document Root
 - ตรวจ proxy ด้วย X-Forwarded-For จำลองจากภายนอกตาม [คู่มืออัปเกรด](SECURITY-UPGRADE.md) เก็บ client IP และ peer IP แยกกัน
-- ทดลองรีเซ็ต MFA ด้วยภาพจำลองก่อน: owner ส่ง, Admin ยืนยัน TOTP ใหม่, เปิดตรวจ, อนุมัติ, เซสชันเดิมถูกถอน, งานลบทำงานใน staging
+- ทดลองรีเซ็ต MFA ด้วยภาพจำลองก่อน: owner ส่ง, Admin มีผลยืนยัน TOTP หรือ Passkey ภายใน 5 นาที, เปิดตรวจ, อนุมัติ, เซสชันเดิมถูกถอน, งานลบทำงานใน staging
 - ตรวจ Google branding ตาม [คู่มือ Google](GOOGLE-BRANDING.md) การ upload ZIP ไม่ยืนยัน DNS ownership ให้
 - ใช้ checksum ของ ZIP ตรวจความครบถ้วนระหว่างส่งไฟล์ แต่ checksum ที่อยู่ข้าง ZIP ไม่ใช่ลายเซ็นยืนยันผู้เผยแพร่
 
@@ -161,6 +161,10 @@ Passkeys เปิดได้โดย `PASSKEY_ENABLED=true`; LINE/Firebase �
 
 รอบนี้ไม่มี migration ใหม่หรือค่า `.env` เพิ่ม ใช้ release ZIP ล่าสุดแทนไฟล์แอป แล้วกด **Restart App** ใน Plesk โดยเก็บ `.env` และ `var` บน Host เดิมไว้ ไม่ต้องเปิด `/install` อีก หาก deploy ผ่าน Git ให้รัน `build` หลังอัปเดตแล้ว Restart App
 
-ตรวจหน้า `/` ว่าเป็น Login เหลืองส้ม, กรอกเบอร์แบบ `0812345678`, ทดลอง MFA ของบัญชี Admin ด้วย Authenticator ครั้งเดียว และทดสอบ LINE ด้วยบัญชีทดสอบที่ผูกจริง: เลือกเลข → การ์ดผลใหม่พร้อม Ref → browser เข้าสู่ระบบ ปุ่มในข้อความเก่าใช้ยืนยันซ้ำไม่ได้ ตัวข้อความเก่ายังอยู่ในประวัติ LINE ตามข้อจำกัด Messaging API
+ตรวจหน้า `/` ว่าเป็น Login เหลืองส้ม, กรอกเบอร์แบบ `0812345678`, ทดลอง MFA ของบัญชี Admin ด้วย Authenticator หรือ Passkey ครั้งเดียว และทดสอบ LINE ด้วยบัญชีทดสอบที่ผูกจริง: เลือกเลข → การ์ดผลใหม่พร้อม Ref → browser เข้าสู่ระบบ ปุ่มในข้อความเก่าใช้ยืนยันซ้ำไม่ได้ ตัวข้อความเก่ายังอยู่ในประวัติ LINE ตามข้อจำกัด Messaging API
 
 หากใช้โลโก้ wordmark ของโปรเจกต์ใน Google OAuth ให้ใช้ `web/public/cusa-sso.png` ที่อัปเดตสีตรงกับ SVG บนเว็บ ตรวจผลการเปลี่ยน Branding ใน Google Console ตาม [คู่มือ Branding](GOOGLE-BRANDING.md) การ deploy เว็บไม่เปลี่ยนการตั้งค่า Google/LINE/Firebase Console อัตโนมัติ
+
+### ปล่อยรุ่น Admin Passkey และเตือนยืนยันเบอร์ (4 ตุลาคม 2026)
+
+อัปโหลดชุด release ใหม่, ติดตั้ง dependencies ตามคู่มือเดิม, แล้ว Restart App ไม่ต้องเพิ่ม `.env` หรือรัน migration ใหม่สำหรับการเปลี่ยนครั้งนี้ ตรวจ Admin ที่ผูก Passkey ว่าเปิดเมนูได้ทันทีหลัง MFA, รายการสำคัญหลัง 5 นาทีเลือก Passkey/TOTP ได้ และไม่มีการทำรายการเมื่อยกเลิกคำขอ ลองบัญชีที่ยังไม่ยืนยันเบอร์เมื่อ `FIREBASE_PHONE_ENABLED=true`: คำเตือนพาไปกรอกเบอร์ได้แต่ไม่ส่ง SMS เอง; บัญชี required ยังคงผ่าน Phone Gate ก่อนเข้าใช้งาน การทดสอบ local ไม่แทนการทดสอบ Google/Firebase/Passkey บน origin จริง

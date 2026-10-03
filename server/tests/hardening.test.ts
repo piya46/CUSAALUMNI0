@@ -3,7 +3,9 @@ import test from 'node:test';
 import express from 'express';
 import request from 'supertest';
 import { requestContext,normalizeIp,rateIp } from '../src/middleware/requestContext.js';
-import { requireAdmin,requireRecentAdminMfa } from '../src/middleware/security.js';
+import { requireAdmin,requireRecentAdminMfa,requireFreshMfa } from '../src/middleware/security.js';
+import { hasAdminMfa,isFreshStrongMfa } from '../src/services/mfaPolicy.js';
+import { lockAdministrators } from '../src/models/adminModel.js';
 import { redactAudit } from '../src/models/authModel.js';
 import { renderOtpEmail,buildOtpMessage } from '../src/services/mail.js';
 
@@ -18,14 +20,50 @@ test('untrusted forwarded headers cannot forge audit IP; trusted loopback honors
   assert.equal(normalizeIp('::ffff:192.0.2.5'),'192.0.2.5');
   assert.equal(rateIp({ip:'2001:db8:abcd:1201::1'} as any),rateIp({ip:'2001:db8:abcd:12ff::9'} as any));
 });
-test('admin requires TOTP and recent MFA for writes, while allowing older TOTP reads',()=>{
+test('admin accepts TOTP or Passkey, reuses fresh MFA for writes and permits older strong-MFA reads',()=>{
   const req:any={identity:{kind:'full',role:'admin',totpEnabled:true,mfaMethod:'email',authenticatedAt:new Date()},method:'POST'};
-  assert.throws(()=>requireAdmin(req,{} as any,()=>{}),{code:'ADMIN_MFA_REQUIRED'});
-  req.identity.mfaMethod='recovery';assert.throws(()=>requireAdmin(req,{} as any,()=>{}),{code:'ADMIN_MFA_REQUIRED'});
-  req.identity.mfaMethod='totp';requireAdmin(req,{} as any,()=>{});
-  requireRecentAdminMfa(req,{} as any,()=>{}); // The login's fresh TOTP already authorizes writes.
-  req.identity.authenticatedAt=new Date(Date.now()-301000);assert.throws(()=>requireRecentAdminMfa(req,{} as any,()=>{}),{code:'MFA_REAUTH_REQUIRED'});
-  req.method='GET';requireRecentAdminMfa(req,{} as any,()=>{});
+  for(const method of ['email','line','recovery','phone',null]){
+    req.identity.mfaMethod=method;
+    assert.equal(hasAdminMfa(req.identity),false);
+    assert.throws(()=>requireAdmin(req,{} as any,()=>{}),{code:'ADMIN_MFA_REQUIRED'});
+    assert.throws(()=>requireFreshMfa(req,{} as any,()=>{}),{code:'MFA_REAUTH_REQUIRED'});
+  }
+  for(const method of ['totp','passkey']){
+    req.identity.mfaMethod=method;req.identity.authenticatedAt=new Date();req.method='POST';
+    assert.equal(hasAdminMfa(req.identity),true);requireAdmin(req,{} as any,()=>{});
+    requireRecentAdminMfa(req,{} as any,()=>{});
+    req.identity.authenticatedAt=new Date(Date.now()-301000);
+    assert.throws(()=>requireRecentAdminMfa(req,{} as any,()=>{}),{code:'MFA_REAUTH_REQUIRED'});
+    req.method='GET';requireAdmin(req,{} as any,()=>{});requireRecentAdminMfa(req,{} as any,()=>{});
+    // Viewing private evidence is a sensitive GET: its explicit freshness gate remains enforced.
+    assert.throws(()=>requireFreshMfa(req,{} as any,()=>{}),{code:'MFA_REAUTH_REQUIRED'});
+    req.identity.kind='pending';assert.equal(hasAdminMfa(req.identity),false);
+    assert.throws(()=>requireAdmin(req,{} as any,()=>{}),{code:'FORBIDDEN'});req.identity.kind='full';
+    req.identity.totpEnabled=false;assert.equal(hasAdminMfa(req.identity),false);
+    assert.throws(()=>requireAdmin(req,{} as any,()=>{}),{code:'ADMIN_MFA_REQUIRED'});req.identity.totpEnabled=true;
+  }
+  const now=Date.now();
+  for(const at of [null,undefined,'invalid',new Date(now+10001),new Date(now-300001)])assert.equal(isFreshStrongMfa('passkey',at,now),false);
+  assert.equal(isFreshStrongMfa('passkey',new Date(now-300000),now),true);
+});
+test('administrative transactions recheck locked assurance and a revoked administrator',async()=>{
+  const actor={userId:'admin-user',email:'admin@example.test',sessionId:'admin-session'};
+  let method='passkey',at=new Date(),revoked=false,sessionExists=true;
+  const conn:any={execute:async(sql:string,params:unknown[])=>{
+    assert.ok(sql.includes('FOR UPDATE'));
+    if(sql.includes('FROM allowed_emails'))return [[...(revoked?[]:[{id:'admin',email:actor.email,role:'admin'}])]];
+    assert.deepEqual(params,[actor.sessionId,actor.userId]);
+    return [[...(sessionExists?[{id:actor.sessionId,mfa_method:method,authenticated_at:at}]:[])]];
+  }};
+  for(method of ['totp','passkey']){
+    at=new Date();await lockAdministrators(actor,conn);
+    at=new Date(Date.now()-301000);await assert.rejects(lockAdministrators(actor,conn),{code:'MFA_REAUTH_REQUIRED'});
+    at=new Date(Date.now()+30000);await assert.rejects(lockAdministrators(actor,conn),{code:'MFA_REAUTH_REQUIRED'});
+  }
+  at=new Date();
+  for(method of ['line','email','recovery'])await assert.rejects(lockAdministrators(actor,conn),{code:'MFA_REAUTH_REQUIRED'});
+  method='passkey';sessionExists=false;await assert.rejects(lockAdministrators(actor,conn),{code:'MFA_REAUTH_REQUIRED'});
+  sessionExists=true;revoked=true;await assert.rejects(lockAdministrators(actor,conn),{code:'ADMIN_REVOKED'});
 });
 test('OTP mail has CUSA SSO sender, matching ref and escaped server-side purpose in both MIME alternatives',()=>{
   const {html,text}=renderOtpEmail('012345','ABC12345','Service <unsafe> & name');

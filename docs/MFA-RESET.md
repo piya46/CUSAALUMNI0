@@ -24,7 +24,7 @@
 - รับ JPEG/PNG จริงเท่านั้น สูงสุด 5 MB / 20 ล้านพิกเซล จำกัดงานอัปโหลดพร้อมกัน 2 งานต่อ process ก่อนรับ body และไม่เขียนภาพต้นฉบับลง disk
 - เจ้าของรับทราบ notice version และเลือกเหตุผล lost / replaced / damaged มีคำขอที่ยังพิจารณาได้ครั้งละหนึ่งคำขอ จำกัด 3 คำขอต่อวันต่อบัญชี/IP
 - ภาพถูก normalize, ลบ metadata, จำกัดด้านยาว 1,600px, ใส่ลายน้ำ CUSA SSO/MFA RESET ONLY/เลขคำขอ/วันที่ แล้วเข้ารหัส AES-256-GCM ด้วยกุญแจสุ่มเฉพาะไฟล์ กุญแจเฉพาะไฟล์ถูก wrap ด้วย master key อีกชั้น AAD ผูกชนิดข้อมูลและ request ID ป้องกันการสลับไฟล์
-- ผู้ดูแลต้องเป็น full TOTP session และยืนยันภายใน 5 นาทีเพื่อเปิดหลักฐานหรือตัดสินใจ การเปิดรูปเป็น authenticated API, no-store, ไม่มี public URL ของไฟล์
+- ผู้ดูแลต้องเป็น full session ที่ยืนยันด้วย TOTP หรือ Passkey และยืนยันภายใน 5 นาทีเพื่อเปิดหลักฐานหรือตัดสินใจ การเปิดรูปเป็น authenticated API, no-store, ไม่มี public URL ของไฟล์
 - ต้องเปิดตรวจหลักฐานภายใน 30 นาทีก่อนอนุมัติ และยืนยันกับเจ้าของผ่านช่องทางที่มีอยู่เดิม รูปที่ดูสมจริงอย่างเดียวไม่ยืนยันว่าเป็นเจ้าของบัญชี ห้ามขอ OTP/Recovery code ของผู้ใช้มาพิสูจน์
 - ห้ามตรวจ/ตัดสินใจคำขอตัวเอง บัญชี Admin ต้องได้รับการอนุมัติจากผู้ดูแล **สองคนอื่นที่แตกต่างกัน** ผู้อนุมัติคนแรกต้องยังมีสิทธิ์อยู่ตอนคนที่สองอนุมัติ หากระบบมีผู้ดูแลไม่พอ ต้องใช้ Recovery code หรือกระบวนการ DBA นอกระบบที่ตรวจตัวตนและบันทึกการดำเนินการ ไม่มี self-approve/bypass endpoint
 - คำขอผูก digest ของ TOTP secret เดิม หากผู้ใช้ผูกเครื่องใหม่ก่อนอนุมัติ คำขอเก่าใช้ถอดเครื่องใหม่นั้นไม่ได้ ให้ปฏิเสธคำขอเก่า
@@ -57,9 +57,9 @@ Worker ภายในแอปรันตอน startup และทุก 15 
 | --- | --- |
 | GET `/api/auth/mfa-reset` | Google pending/full session; คืนคำขอตัวเองล่าสุด, enabled, noticeVersion |
 | POST `/api/auth/mfa-reset` | multipart: evidence, reason, noticeVersion=`2026-09-30`, acknowledged=`true`; 201 `{id,status:"pending"}` |
-| GET `/api/admin/mfa-resets?status=pending&cursor=...` | TOTP Admin; keyset ครั้งละ 50, `{requests,meta:{hasMore,nextCursor}}`; เก็บ cursor และ status เดิมเมื่อโหลดหน้าใหม่ |
-| GET `/api/admin/mfa-resets/:id/evidence` | TOTP Admin ภายใน 5 นาที; คืน JPEG ที่ถอดรหัสพร้อมลายน้ำ ไม่ cache; บันทึก audit ทุกครั้ง |
-| POST `/api/admin/mfa-resets/:id/decision` | fresh TOTP Admin; approve `{decision:"approve",verified:true,reason:"identity_verified"}` หรือ reject พร้อมเหตุผลด้านล่าง |
+| GET `/api/admin/mfa-resets?status=pending&cursor=...` | TOTP/Passkey Admin; keyset ครั้งละ 50, `{requests,meta:{hasMore,nextCursor}}`; เก็บ cursor และ status เดิมเมื่อโหลดหน้าใหม่ |
+| GET `/api/admin/mfa-resets/:id/evidence` | TOTP/Passkey Admin ภายใน 5 นาที; คืน JPEG ที่ถอดรหัสพร้อมลายน้ำ ไม่ cache; บันทึก audit ทุกครั้ง |
+| POST `/api/admin/mfa-resets/:id/decision` | fresh TOTP/Passkey Admin; approve `{decision:"approve",verified:true,reason:"identity_verified"}` หรือ reject พร้อมเหตุผลด้านล่าง |
 
 เหตุผล reject: `unreadable`, `identity_mismatch`, `insufficient_evidence`, `withdrawn` ไม่รับข้อความอิสระที่อาจคัดลอกเลขบัตรเข้า audit
 

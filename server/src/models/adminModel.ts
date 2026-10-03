@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolConnection } from 'mysql2/promise';
 import { execute, query, transaction } from '../db.js';
 import { HttpError } from '../middleware/security.js';
+import { isFreshStrongMfa } from '../services/mfaPolicy.js';
 import { hashToken, randomToken } from '../services/crypto.js';
 
 type Role = 'admin' | 'user';
@@ -47,11 +48,11 @@ export async function lockAdministrators(actor: Actor, connection: PoolConnectio
     throw new HttpError(403, 'Administrator access is no longer available.', 'ADMIN_REVOKED');
   }
   if(actor.sessionId) {
-    const [session]=await query<{id:string}>(`SELECT s.id FROM sessions s JOIN users u ON u.id=s.user_id
-      WHERE s.id=? AND s.user_id=? AND s.kind='full' AND s.mfa_method='totp'
-      AND s.expires_at>UTC_TIMESTAMP(3) AND s.authenticated_at>=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 5 MINUTE)
+    const [session]=await query<{id:string;mfa_method:string;authenticated_at:Date}>(`SELECT s.id,s.mfa_method,s.authenticated_at FROM sessions s JOIN users u ON u.id=s.user_id
+      WHERE s.id=? AND s.user_id=? AND s.kind='full'
+      AND s.expires_at>UTC_TIMESTAMP(3)
       AND u.deleted_at IS NULL AND u.totp_secret IS NOT NULL FOR UPDATE`,[actor.sessionId,actor.userId],connection);
-    if(!session)throw new HttpError(403,'กรุณายืนยัน Authenticator อีกครั้ง','MFA_REAUTH_REQUIRED');
+    if(!session||!isFreshStrongMfa(session.mfa_method,session.authenticated_at))throw new HttpError(403,'กรุณายืนยัน Passkey หรือ Authenticator อีกครั้ง','MFA_REAUTH_REQUIRED');
   }
   return admins;
 }

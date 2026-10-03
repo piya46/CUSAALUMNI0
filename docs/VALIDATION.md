@@ -1,5 +1,16 @@
 # Validation record
 
+## Admin Passkey assurance and phone reminder — 2026-10-04
+
+- Production server/React build passes; no new dependencies, database migration or private `.env` changes.
+- Server suite: **81 passed, 44 skipped, 0 failed**. Skipped tests require live local MariaDB/Redis; no production database was contacted.
+- **25 targeted browser scenarios passed across runs** for auth UX, additional factors, admin Passkeys and hardening. Chrome's virtual authenticator uses `localhost` (an IP literal is not a valid WebAuthn RP ID). Browser provider/backend responses are synthetic; no real Google/LINE/Firebase login or SMS was sent.
+- Signed P-256 assertions pass through the real WebAuthn verifier and Passkey model with a transactional in-memory DB adapter. Coverage includes origin/RP ID/UV/presence/signature/counter/user-handle checks, credential ownership, account/session/factor/purpose binding, challenge replacement/expiry/replay, account lockout, recovery-session restrictions and audit-failure rollback. Reauthentication refreshes assurance without changing session/CSRF credentials or absolute expiry.
+- Both middleware and locked admin mutation checks accept fresh TOTP/Passkey, deny weaker methods and timestamps outside policy, and preserve access revocation. Ordinary admin reads require strong MFA but do not prompt again solely because five minutes passed; sensitive evidence reads still require freshness.
+- Browser tests cover Admin Passkey login, fresh-assurance reuse, stale-assurance modal with both methods, cancellation without executing the operation, CSRF-protected retry after Passkey, and reuse for a subsequent operation.
+- Phone reminders appear only when the provider is enabled and the account is unverified; CTA focuses Thai phone entry, no SMS sends on its own, and the reminder disappears after the complete mocked Firebase/server verification flow. Required-phone accounts remain gated. Mobile layout has no horizontal overflow.
+- HostAtom deployment, real authenticator testing on the production RP ID, provider configuration/delivery, database grants and independent security review remain operator checks; local results do not certify them.
+
 ## Current Node maintenance / waiting-room revision — 2026-10-04
 
 - Server + React typecheck and production build pass. Existing dependencies were reused; no package or lockfile change. Secret-bearing `.env` values were preserved; only `BACKGROUND_JOBS_ENABLED=true` was added and file permissions remain 0600.

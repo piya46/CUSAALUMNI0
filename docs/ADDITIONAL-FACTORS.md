@@ -6,8 +6,8 @@
 
 1. ผู้ใช้เข้าสู่ระบบด้วย Google ที่อยู่ใน Allowlist
 2. บัญชีที่ยังไม่เปิด TOTP ใช้ Email OTP พร้อม Ref; บัญชีที่เปิด TOTP เลือก TOTP, Recovery code, Passkey หรือ LINE ที่ผูกไว้แล้วได้
-3. การผูก/ถอด Passkey หรือ LINE ต้องมี TOTP และยืนยัน TOTP ภายใน 5 นาที ระบบแสดงหน้าต่างยืนยันใหม่เมื่อจำเป็น การเข้าสู่ระบบด้วย Recovery code ต้องตั้ง Authenticator ใหม่ก่อนจัดการวิธีสำรอง
-4. หน้า MFA ของ Admin พาไปยืนยัน Authenticator โดยตรง เพื่อเข้าสู่พื้นที่ผู้ดูแลด้วย TOTP ครั้งเดียว การเปิดอ่านหน้าต่าง ๆ ไม่ถามซ้ำ การเปลี่ยนสิทธิ์/เปิดหลักฐานยังต้องมี TOTP ภายใน 5 นาที หากมีเซสชันเก่าที่เข้าด้วย Passkey/LINE ให้กด **ยืนยันสิทธิ์ Admin** ก่อนเปิดเมนูดูแลระบบ
+3. การผูก/ถอด Passkey หรือ LINE ต้องตั้งค่า TOTP ไว้แล้ว และยืนยัน TOTP หรือ Passkey ภายใน 5 นาที ระบบแสดงหน้าต่างยืนยันใหม่เมื่อจำเป็น การเข้าสู่ระบบด้วย Recovery code ต้องตั้ง Authenticator ใหม่ก่อนจัดการวิธีสำรอง
+4. Admin เลือก **Passkey หรือ Authenticator (TOTP)** ที่ผูกไว้แล้วได้ ยืนยันตอนล็อกอินครั้งเดียวก็เปิดหน้าผู้ดูแลได้ ไม่ถามซ้ำเมื่อเปิดอ่านหน้าทั่วไป การเปลี่ยนสิทธิ์/ออกคีย์/เปิดหลักฐานต้องมีผลยืนยันจากสองวิธีนี้ภายใน 5 นาที ถ้ายังสดใช้ผลเดิม; ถ้าหมดช่วงเวลาจะแสดงหน้าต่างให้เลือก Passkey หรือ TOTP อีกครั้ง เซสชันที่เข้าโดย LINE ต้องยืนยันหนึ่งในสองวิธีนี้เพื่อเปิดสิทธิ์ Admin; Email, LINE, SMS และ Recovery ไม่ให้สิทธิ์ Admin โดยอัตโนมัติ
 5. Firebase SMS ใช้ยืนยันเบอร์ครั้งแรก ไม่ทำให้ session ผ่าน MFA และไม่เปิดให้ใช้เบอร์เป็นบัญชีหลักแทน Google หากเปิด `FIREBASE_PHONE_REQUIRED=true` จะบังคับเฉพาะบัญชีที่สร้างหลังเปิดนโยบายนี้ ทั้งหน้าเว็บและการออก/แลก/ตรวจ token ฝั่ง SSO ตรวจสถานะเบอร์
 6. ปิด TOTP, ตั้ง TOTP ใหม่ หรืออนุมัติคำขอรีเซ็ต MFA จะถอน Passkeys และ LINE เดิม พร้อมยกเลิก challenge และ session ที่เกี่ยวข้อง เบอร์ที่ผ่านการตรวจแล้วเป็นข้อมูลแยก ไม่ใช้แทน MFA
 
@@ -50,10 +50,10 @@ Email OTP ไม่กลายเป็น fallback สำหรับบัญ
 2. เชื่อม Official Account ที่ถูกต้องกับ LINE Login channel และเผยแพร่ channel ตามกลุ่มผู้ทดสอบ/ผู้ใช้จริงที่ต้องการ
 3. Messaging API → Webhook URL: `https://sso.reunion.scicu-alumni.com/api/auth/line/webhook` เปิด Use webhook และ Webhook redelivery แล้วกด Verify
 4. ตั้ง webhook ผ่าน HTTPS, proxy ต้องไม่แก้ raw JSON body; ไม่เปิด CORS หรือข้าม CSRF ให้ API อื่นเพื่อแก้ webhook
-5. ผู้ใช้เพิ่มเพื่อน OA, เข้า CUSA SSO ด้วย Google/TOTP, หน้า **ความปลอดภัย → ผูกบัญชี LINE** จากนั้นยืนยัน LINE Login
+5. ผู้ใช้เพิ่มเพื่อน OA, เข้า CUSA SSO ด้วย Google ตามด้วย TOTP หรือ Passkey, หน้า **ความปลอดภัย → ผูกบัญชี LINE** จากนั้นยืนยัน LINE Login
 6. ล็อกเอาต์และเข้าใหม่ เลือก **ยืนยันผ่าน LINE** หน้าเว็บจะแสดงเลข 2 หลัก ข้อความ LINE มีเลขให้เลือก 3 ค่าและปุ่มปฏิเสธ เลือกค่าให้ตรงกัน คำขอหมดอายุ 3 นาที
 
-การป้องกัน: OAuth state/nonce/S256 PKCE ใช้ครั้งเดียวและผูกกับ session ที่ยืนยัน TOTP; backend แลกและตรวจ LINE ID token เอง ไม่เชื่อ `userId` ที่ browser ส่งมา; user ID เก็บเข้ารหัสพร้อม HMAC สำหรับ unique lookup; หนึ่ง LINE ผูกได้หนึ่งบัญชี
+การป้องกัน: OAuth state/nonce/S256 PKCE ใช้ครั้งเดียวและผูกกับ session ที่ยืนยัน TOTP หรือ Passkey ภายใน 5 นาที; backend แลกและตรวจ LINE ID token เอง ไม่เชื่อ `userId` ที่ browser ส่งมา; user ID เก็บเข้ารหัสพร้อม HMAC สำหรับ unique lookup; หนึ่ง LINE ผูกได้หนึ่งบัญชี
 
 Webhook ตรวจ HMAC-SHA256 บน **raw body** ก่อนอ่าน JSON, รับ postback จาก user chat เท่านั้น, ตรวจผู้ส่ง/อายุ/challenge/choice token ที่สุ่ม ไม่รับแค่เลข 2 หลักเป็นหลักฐาน การตอบผิดหรือปฏิเสธทำให้คำขอนั้นจบทันที คำตอบซ้ำไม่ทำงานซ้ำ Webhook เพียงอนุมัติคำขอ ส่วน cookie/CSRF ของ browser เดิมใช้รับ session ใหม่และหมุน token
 
@@ -118,14 +118,16 @@ Firebase auth state อยู่ใน memory เท่านั้น; หล�
 | Method + path ใต้ `/api/auth` | สิทธิ์ / payload |
 | --- | --- |
 | `GET /factors` | Full session; ส่งเฉพาะสถานะ, metadata Passkey และ public Firebase config |
-| `POST /passkeys/register/options` | Full session + TOTP สด; `{}` → `{challengeId,options}` |
-| `POST /passkeys/register/verify` | TOTP สด; `{challengeId,name,response}` → 201 |
-| `DELETE /passkeys/:id` | TOTP สด; ลบของตัวเองและถอน session อื่น |
+| `POST /passkeys/register/options` | Full session + TOTP หรือ Passkey สด; `{}` → `{challengeId,options}` |
+| `POST /passkeys/register/verify` | TOTP หรือ Passkey สด; `{challengeId,name,response}` → 201 |
+| `DELETE /passkeys/:id` | TOTP หรือ Passkey สด; ลบของตัวเองและถอน session อื่น |
 | `POST /passkeys/authenticate/options` | Pending Google session ที่มี TOTP และ Passkey |
 | `POST /passkeys/authenticate/verify` | `{challengeId,response}` → หมุน cookie เมื่อผ่าน |
-| `POST /line/link` | TOTP สด; `{}` → `{url}` ที่ backend สร้าง |
+| `POST /passkeys/reauth/options` | Full session, มี TOTP และ Passkey เดิม, ไม่ใช่ Recovery session; `{}` → `{challengeId,options}` |
+| `POST /passkeys/reauth/verify` | `{challengeId,response}` → `{ok:true}`; ตรวจ proof แล้วอัปเดตความสดพร้อม audit |
+| `POST /line/link` | TOTP หรือ Passkey สด; `{}` → `{url}` ที่ backend สร้าง |
 | `GET /line/callback` | OAuth code/state จาก LINE Login |
-| `DELETE /line/link` | TOTP สด; ถอดของตัวเองและถอน session อื่น |
+| `DELETE /line/link` | TOTP หรือ Passkey สด; ถอดของตัวเองและถอน session อื่น |
 | `POST /line/send` | Pending session; `{}` → `{challengeId,number,expiresIn,retryAfter}` |
 | `GET /line/challenges/:id` | Session เจ้าของ; `{status}` โดยไม่ส่ง choice token |
 | `POST /line/verify` | Pending session; `{challengeId}` → หมุน cookie เมื่อ approved |
@@ -155,3 +157,13 @@ Firebase auth state อยู่ใน memory เท่านั้น; หล�
 - หน้า MFA มีปุ่ม **ขอรีเซ็ต MFA** สำหรับเจ้าของบัญชีหลัง Google Login ใช้ขั้นตอนแนบหลักฐานเดิม ใส่ลายน้ำ/เข้ารหัสและรอผู้ดูแล ไม่มีปุ่มข้าม MFA การอนุมัติและกำหนดลบเอกสารไม่เปลี่ยน
 
 รอบนี้ไม่มี schema migration หรือ `.env` ใหม่ Deploy release, Restart App แล้วทดสอบเบอร์/LINE จริงด้วยบัญชีทดสอบที่ผูกไว้ การทดสอบอัตโนมัติจำลอง provider ไม่ส่ง SMS หรือ LINE จริง ยังต้องเปิด Thailand ใน Firebase SMS region policy หากพบ `OPERATION_NOT_ALLOWED` เรื่อง region.
+
+## นโยบาย Admin และแจ้งเตือนเบอร์โทร (4 ตุลาคม 2026)
+
+- WebAuthn บังคับ User Verification (PIN/biometric), RP ID/origin, signature, counter และเจ้าของ credential ทั้งตอนล็อกอินและ reauthenticate
+- Challenge อายุ 3 นาทีใช้ครั้งเดียว ผูก session/account/factor และ `purpose=login|reauth` ใน payload ที่เข้ารหัส ไม่รับ proof ข้ามวัตถุประสงค์ คำขอที่ค้างจากรุ่นก่อนอัปเดตต้องเริ่มใหม่
+- Reauthenticate อัปเดต `mfa_method`/`authenticated_at` พร้อม audit ใน transaction เดียว ไม่ต่ออายุ session ไม่หมุน token/CSRF; frontend ส่งคำขอรายการเดิมซ้ำได้เพียงหนึ่งครั้งหลังยืนยันสำเร็จ การยกเลิกไม่ทำรายการ
+- Initial enrollment ยังต้องตั้ง TOTP และเก็บ Recovery codes ก่อนเพิ่ม Passkey เช่นเดิม การเปิด/ปิด TOTP และสร้าง Recovery codes ใหม่ยังต้องกรอกรหัส TOTP ตามกระบวนการเฉพาะนั้น
+- `/auth/me.factors.phoneEnabled` ใช้ร่วมกับ `phoneVerified` แสดงคำเตือนในพื้นที่บัญชีหลังล็อกอิน เฉพาะเมื่อเปิด Firebase Phone และยังไม่ยืนยันเบอร์ ปุ่มพาไปช่องกรอกเบอร์ไทยในหน้าความปลอดภัย ไม่ส่ง SMS อัตโนมัติและไม่บล็อกบัญชีที่ไม่ได้ถูกบังคับ
+- บัญชี `phoneRequired=true` ยังต้องผ่าน Phone Gate ก่อนเข้าใช้งาน; บัญชีที่ยืนยันแล้วหรือระบบปิด SMS จะไม่เห็นคำเตือนเสริมนี้ การยืนยันเบอร์ไม่เปลี่ยนระดับ MFA
+- รุ่นนี้ไม่เพิ่มตารางหรือ migration และไม่ต้องเพิ่มค่า `.env` ทดสอบทั้ง Admin/สมาชิก, TOTP/Passkey, MFA หมดช่วง 5 นาที, ยกเลิก reauth และเบอร์โทรทั้ง optional/required ก่อนปล่อยใช้งาน

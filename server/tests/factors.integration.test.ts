@@ -29,7 +29,7 @@ after(async()=>{globalThis.fetch=realFetch;if(enabled){for(const id of apps)awai
 
 test('factor management rejects pending, recovery and stale sessions; TOTP enrollment remains mandatory',{skip:!enabled},async()=>{
   const s=await fixture('pending');await assert.rejects(passkey.registrationOptions(s.sessionId,audit),{code:'TOTP_ENROLLMENT_REQUIRED'});
-  await execute("UPDATE sessions SET kind='full',mfa_method='recovery' WHERE id=?",[s.sessionId]);await assert.rejects(passkey.registrationOptions(s.sessionId,audit),{code:'MFA_REAUTH_REQUIRED'});
+  await execute("UPDATE sessions SET kind='full',mfa_method='recovery' WHERE id=?",[s.sessionId]);await assert.rejects(passkey.registrationOptions(s.sessionId,audit),{code:'MFA_ENROLLMENT_REQUIRED'});
   await execute("UPDATE sessions SET mfa_method='totp',authenticated_at=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 6 MINUTE) WHERE id=?",[s.sessionId]);await assert.rejects(line.lineLinkStart(s.sessionId,audit),{code:'MFA_REAUTH_REQUIRED'});
   await execute('UPDATE users SET totp_secret=NULL WHERE id=?',[s.userId]);await assert.rejects(line.lineLinkStart(s.sessionId,audit),{code:'TOTP_ENROLLMENT_REQUIRED'});
 });

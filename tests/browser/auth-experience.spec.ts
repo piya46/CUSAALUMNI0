@@ -36,7 +36,7 @@ test('Admin enters with one TOTP verification, receives success only after MFA, 
   await expect(page.getByRole('heading', { name: 'ยืนยันว่าเป็นคุณ' })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'เข้าสู่ระบบสำเร็จ' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'ยืนยันผ่าน LINE', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'ยืนยันด้วย Passkey' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'ยืนยันด้วย Passkey' })).toBeVisible();
   const digits = page.locator('.otp-digits input');
   for (let i = 0; i < 6; i++) await digits.nth(i).fill('012345'[i]);
   await page.getByRole('button', { name: 'ยืนยันและเข้าสู่ระบบ' }).click();

@@ -12,6 +12,7 @@ import { sendOtp } from '../services/mail.js';
 import { makeTotp } from '../services/totp.js';
 import { HttpError, audit, sessionCookie, flowCookie, cookieOptions } from '../middleware/security.js';
 import { factorStatus } from './factorController.js';
+import { hasAdminMfa } from '../services/mfaPolicy.js';
 
 const google = () => new OAuth2Client(config.googleClientId,config.googleClientSecret,`${config.appOrigin}/api/auth/google/callback`);
 const record=(req:Request):model.AuthAudit=>(conn,event,target,metadata)=>audit(req,event,target,metadata,conn);
@@ -22,7 +23,7 @@ export function status(_req: Request, res: Response) { res.json({configured:conf
 export async function me(req: Request, res: Response) {
   const s = req.identity!;
   const factors=await factorStatus(s.userId);
-  res.json({ factors,phoneRequired:Boolean(s.phoneRequired),user:{id:s.userId,email:s.email,name:s.name,firstName:s.firstName??'',lastName:s.lastName??'',avatar:s.avatar,role:s.role,totpEnabled:s.totpEnabled},csrfToken:s.csrfToken,requiresMfa:s.kind==='pending',status:s.kind==='pending'?'mfa_required':'authenticated',mfaMethod:s.kind==='pending'?(s.totpEnabled?'totp':'email'):s.mfaMethod,otp:s.kind==='pending'&&!s.totpEnabled?await model.otpState(s.sessionId):undefined,adminMfaRequired:s.role==='admin'&&(!s.totpEnabled||s.mfaMethod!=='totp'),recoveryCodesRemaining:s.kind==='full'?await model.recoveryCodesRemaining(s.userId):undefined });
+  res.json({ factors,phoneRequired:Boolean(s.phoneRequired),user:{id:s.userId,email:s.email,name:s.name,firstName:s.firstName??'',lastName:s.lastName??'',avatar:s.avatar,role:s.role,totpEnabled:s.totpEnabled},csrfToken:s.csrfToken,requiresMfa:s.kind==='pending',status:s.kind==='pending'?'mfa_required':'authenticated',mfaMethod:s.kind==='pending'?(s.totpEnabled?'totp':'email'):s.mfaMethod,otp:s.kind==='pending'&&!s.totpEnabled?await model.otpState(s.sessionId):undefined,adminMfaRequired:s.role==='admin'&&!hasAdminMfa(s),recoveryCodesRemaining:s.kind==='full'?await model.recoveryCodesRemaining(s.userId):undefined });
 }
 export async function googleStart(req: Request, res: Response) {
   const state=randomToken(),browser=randomToken(),nonce=randomToken(),verifier=randomToken(48);
