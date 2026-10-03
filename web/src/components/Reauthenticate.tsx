@@ -4,7 +4,7 @@ import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/brow
 import { api } from '../models/api';
 import { Modal } from './ui';
 import { OtpInput } from './OtpInput';
-export function Reauthenticate({complete,cancel,passkeyAvailable=false}:{complete:()=>void;cancel:()=>void;passkeyAvailable?:boolean}) {
+export function Reauthenticate({complete,cancel,passkeyAvailable=false,adminAccess=false}:{complete:()=>void;cancel:()=>void;passkeyAvailable?:boolean;adminAccess?:boolean}) {
   const [code,setCode]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   async function verifyPasskey(){
     setBusy(true);setError('');
@@ -17,7 +17,7 @@ export function Reauthenticate({complete,cancel,passkeyAvailable=false}:{complet
     }catch(err){setError(err instanceof Error && err.name==='NotAllowedError'?'ยังไม่ได้ยืนยัน Passkey ลองอีกครั้งหรือใช้ Authenticator':(err as Error).message);}
     finally{setBusy(false);}
   }
-  return <Modal title="ยืนยันก่อนเปลี่ยนแปลงสิทธิ์" description={passkeyAvailable?'เลือก Passkey หรือกรอกรหัส Authenticator เพื่อดำเนินการต่อ':'กรอกรหัสปัจจุบันจาก Authenticator เพื่อดำเนินการต่อ'} close={cancel} busy={busy}>
+  return <Modal title={adminAccess?'ยืนยันสิทธิ์ผู้ดูแล':'ยืนยันก่อนเปลี่ยนแปลงสิทธิ์'} description={passkeyAvailable?'เลือก Passkey หรือกรอกรหัส Authenticator เพื่อดำเนินการต่อ':'กรอกรหัสปัจจุบันจาก Authenticator เพื่อดำเนินการต่อ'} close={cancel} busy={busy}>
     {error&&<p role="alert" className="inline-error">{error}</p>}
     {passkeyAvailable&&<div className="extra-mfa"><button className="button secondary full-width" disabled={busy} onClick={()=>void verifyPasskey()}><Fingerprint size={18}/>ยืนยันด้วย Passkey</button><p>หรือใช้ Authenticator</p></div>}
     <form onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{await api('/auth/reauth','POST',{code},false);complete();}catch(err){setError((err as Error).message);setCode('');}finally{setBusy(false);}}}>

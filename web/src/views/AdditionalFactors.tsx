@@ -46,12 +46,14 @@ export function AdditionalFactors({identity,onIdentityChanged}:{identity:Identit
   </div></Panel>;
 }
 
-export function ExtraMfa({identity,onVerified}:{identity:Identity;onVerified:()=>Promise<void>}){
+export function ExtraMfa({identity,onVerified,method,onBusyChange}:{identity:Identity;onVerified:()=>Promise<void>;method:'passkey'|'line'|null;onBusyChange:(busy:boolean)=>void}){
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[line,setLine]=useState<{challengeId:string;number:string;reference?:string;expiresIn:number}|null>(null),[deadline,setDeadline]=useState(0),[now,setNow]=useState(Date.now());
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
   const remaining=Math.max(0,Math.ceil((deadline-now)/1000));
+  useEffect(()=>{onBusyChange(busy);},[busy,onBusyChange]);
+  useEffect(()=>{setError('');},[method]);
   useEffect(()=>{
-    if(!line)return;let alive=true,working=false;
+    if(!line||method!=='line')return;let alive=true,working=false;
     const timer=setInterval(async()=>{if(working||!alive)return;working=true;try{
       const state=await api<{status:string}>(`/auth/line/challenges/${line.challengeId}`);
       if(!alive)return;
@@ -59,12 +61,12 @@ export function ExtraMfa({identity,onVerified}:{identity:Identity;onVerified:()=
       if(['denied','expired','used'].includes(state.status)){clearInterval(timer);setLine(null);setError(state.status==='denied'?'คำขอ LINE ถูกปฏิเสธ กรุณาเริ่มใหม่':'คำขอ LINE หมดอายุหรือใช้แล้ว');}
     }catch(e){if(alive){clearInterval(timer);setError((e as Error).message);setLine(null);}}finally{working=false;if(alive)setBusy(false);}},2500);
     return()=>{alive=false;clearInterval(timer);};
-  },[line]);
+  },[line,method]);
   async function act(action:()=>Promise<void>){setBusy(true);setError('');try{await action();}catch(e){setError((e as Error).message);if(e instanceof ApiError&&e.retryAfter){const stamp=Date.now();setNow(stamp);setDeadline(stamp+e.retryAfter*1000);}}finally{setBusy(false);}}
-  const lineAvailable=identity.user.role!=='admin'&&identity.factors?.line;
-  if(!identity.factors?.passkey&&!lineAvailable)return null;
-  return <div className="extra-mfa"><p>หรือใช้วิธียืนยันที่ผูกไว้</p>{error&&<p className="inline-error" role="alert">{error}</p>}
-    {identity.factors?.passkey&&<button className="button secondary full-width" disabled={busy} onClick={()=>void act(async()=>{
+  const lineAvailable=method==='line'&&identity.factors?.line,passkeyAvailable=method==='passkey'&&identity.factors?.passkey;
+  if(!passkeyAvailable&&!lineAvailable)return null;
+  return <div className="extra-mfa">{error&&<p className="inline-error" role="alert">{error}</p>}
+    {passkeyAvailable&&<button className="button secondary full-width" disabled={busy} onClick={()=>void act(async()=>{
       const {startAuthentication}=await import('@simplewebauthn/browser');
       const result=await api<{challengeId:string;options:PublicKeyCredentialRequestOptionsJSON}>('/auth/passkeys/authenticate/options','POST',{});
       const response=await startAuthentication({optionsJSON:result.options});await api('/auth/passkeys/authenticate/verify','POST',{challengeId:result.challengeId,response});await onVerified();

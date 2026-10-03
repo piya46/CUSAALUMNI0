@@ -19,18 +19,23 @@ async function virtualPasskey(page: Page) {
     allowCredentials: [{ id: id.toString('base64url'), type: 'public-key', transports: ['internal'] }] };
 }
 
-test('Admin logs in with Passkey once, reuses fresh assurance and chooses Passkey for a later sensitive operation', async ({ page }) => {
+for(const entryMethod of ['passkey','line'] as const)test(`Admin enters via ${entryMethod}, obtains Passkey assurance and reuses it until a sensitive operation needs reauthentication`, async ({ page }) => {
   const options = await virtualPasskey(page);
-  let loggedIn = false, fresh = true, writes = 0, reauth = 0, login = 0;
+  let loggedIn = false, elevated = false, fresh = true, writes = 0, reauth = 0, login = 0, adminCalls = 0;
+  const initialReauth=entryMethod==='line'?1:0;
   const target = { id: 'target-test', email: 'target@example.test', name: 'Target', role: 'user', totpEnabled: true };
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/auth/status') return route.fulfill({ json: { configured: true } });
     if (path === '/api/auth/me') return route.fulfill({ json: {
       user: { id: 'admin-test', name: 'Admin', email: 'admin@example.test', role: 'admin', totpEnabled: true },
-      csrfToken: 'test-csrf', requiresMfa: !loggedIn, mfaMethod: loggedIn ? 'passkey' : 'totp', adminMfaRequired: !loggedIn,
+      csrfToken: 'test-csrf', requiresMfa: !loggedIn, mfaMethod: elevated ? 'passkey' : loggedIn ? 'line' : 'totp', adminMfaRequired: !elevated,
       factors: { passkey: true, line: true, phoneVerified: true },
     } });
+    if(path==='/api/auth/line/send')return route.fulfill({json:{challengeId:'admin-line-challenge',number:'42',reference:'LN-001122334455',retryAfter:60,expiresIn:180}});
+    if(path==='/api/auth/line/challenges/admin-line-challenge')return route.fulfill({json:{status:'approved'}});
+    if(path==='/api/auth/line/verify'){expect(route.request().headers()['x-csrf-token']).toBe('test-csrf');login++;loggedIn=true;return route.fulfill({json:{ok:true}});}
+    if(path.startsWith('/api/admin/')){adminCalls++;expect(elevated).toBe(true);}
     if (path.endsWith('/options')) {
       expect(route.request().headers()['x-csrf-token']).toBe('test-csrf');
       return route.fulfill({ json: { challengeId: '00000000-0000-4000-8000-000000000001', options } });
@@ -41,6 +46,7 @@ test('Admin logs in with Passkey once, reuses fresh assurance and chooses Passke
       expect(proof.type).toBe('public-key'); expect(proof.response.signature).toBeTruthy();
       const clientData = JSON.parse(Buffer.from(proof.response.clientDataJSON, 'base64url').toString());
       expect(clientData.origin).toBe('http://localhost:4188'); expect(clientData.challenge).toBe(options.challenge);
+      elevated=true;
       if (path.includes('/reauth/')) { reauth++; fresh = true; } else { login++; loggedIn = true; }
       return route.fulfill({ json: { ok: true } });
     }
@@ -53,7 +59,17 @@ test('Admin logs in with Passkey once, reuses fresh assurance and chooses Passke
       users: [target], emails: [], applications: [], apiKeys: [], events: [], sessions: [], passkeys: [], meta: { total: 1, totalPages: 1, currentPage: 1, limit: 10 } } });
   });
   await page.goto('http://localhost:4188/login?auth=success&status=mfa_required');
-  await page.getByRole('button', { name: 'ยืนยันด้วย Passkey' }).click();
+  if(entryMethod==='passkey'){
+    await page.getByRole('button',{name:'เลือก Passkey',exact:true}).click();
+    await page.getByRole('button',{name:'ยืนยันด้วย Passkey'}).click();
+  }else{
+    await page.getByRole('button',{name:'เลือก LINE',exact:true}).click();
+    await page.getByRole('button',{name:'ยืนยันผ่าน LINE',exact:true}).click();
+    await expect(page.getByRole('button',{name:'ยืนยันสิทธิ์ Admin'})).toBeVisible();
+    await expect(page.getByRole('navigation').getByRole('button',{name:/^ผู้ใช้งาน/})).toHaveCount(0);expect(adminCalls).toBe(0);
+    await page.getByRole('button',{name:'ยืนยันสิทธิ์ Admin'}).click();
+    await page.getByRole('dialog').getByRole('button',{name:'ยืนยันด้วย Passkey'}).click();
+  }
   await expect(page.getByRole('status').filter({ hasText: 'เข้าสู่ระบบสำเร็จ' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'ยืนยันสิทธิ์ Admin' })).toHaveCount(0);
   await page.getByRole('navigation').getByRole('button', { name: /^ผู้ใช้งาน/ }).click();
@@ -62,7 +78,7 @@ test('Admin logs in with Passkey once, reuses fresh assurance and chooses Passke
     await page.getByRole('dialog').getByRole('button', { name: 'ยืนยันยกเลิกสิทธิ์' }).click();
   };
   await openOperation(); await expect(page.getByRole('dialog')).toHaveCount(0);
-  expect(login).toBe(1); expect(reauth).toBe(0); expect(writes).toBe(1);
+  expect(login).toBe(1); expect(reauth).toBe(initialReauth); expect(writes).toBe(1);
   fresh = false;
   await openOperation();
   const dialog = page.getByRole('dialog');
@@ -75,8 +91,8 @@ test('Admin logs in with Passkey once, reuses fresh assurance and chooses Passke
   await expect(dialog).toContainText('ยกเลิกการยืนยัน ไม่มีการเปลี่ยนแปลงสิทธิ์'); expect(writes).toBe(1);
   await dialog.getByRole('button', { name: 'ยืนยันยกเลิกสิทธิ์' }).click();
   await dialog.getByRole('button', { name: 'ยืนยันด้วย Passkey' }).click();
-  await expect(dialog).toHaveCount(0); expect(reauth).toBe(1); expect(writes).toBe(2);
-  await openOperation(); await expect(dialog).toHaveCount(0); expect(reauth).toBe(1); expect(writes).toBe(3);
+  await expect(dialog).toHaveCount(0); expect(reauth).toBe(initialReauth+1); expect(writes).toBe(2);
+  await openOperation(); await expect(dialog).toHaveCount(0); expect(reauth).toBe(initialReauth+1); expect(writes).toBe(3);
 });
 
 for (const scenario of ['unverified', 'verified', 'disabled', 'required'] as const) {

@@ -14,9 +14,13 @@ test('LINE MFA shows only the issued number, blocks resend and consumes approval
     return route.fulfill({json:{sessions:[]}});
   });
   await page.setViewportSize({width:390,height:844});await page.goto('/login');
-  await expect(page.getByRole('button',{name:'ยืนยันด้วย Passkey'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'เลือก Passkey'})).toBeVisible();
+  await page.getByRole('button',{name:'เลือก LINE',exact:true}).click();
   await page.getByRole('button',{name:'ยืนยันผ่าน LINE',exact:true}).click();await expect(page.locator('.number-matching strong')).toHaveText('42');await expect(page.getByText('Ref: LN-001122334455')).toBeVisible();
   await expect(page.getByRole('button',{name:/ขอ LINE ใหม่ได้ใน/})).toBeDisabled();
+  await page.getByRole('button',{name:'เลือก Authenticator',exact:true}).click();
+  await page.getByRole('button',{name:'เลือก LINE',exact:true}).click();
+  await expect(page.getByRole('button',{name:/ขอ LINE ใหม่ได้ใน/})).toBeDisabled();expect(sends).toBe(1);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'test-results/line-matching-mobile.png',fullPage:true});
   await expect(page.getByRole('heading',{name:'ความปลอดภัย',exact:true})).toBeVisible({timeout:12000});expect(complete).toBe(true);expect(sends).toBe(1);await expect(page.getByRole('status').filter({hasText:'เข้าสู่ระบบสำเร็จ'})).toBeVisible();
@@ -25,8 +29,8 @@ test('required phone gate blocks application continuation and lists the separate
   await page.route('**/api/**',route=>{
     const path=new URL(route.request().url()).pathname;
     if(path==='/api/auth/status')return route.fulfill({json:{configured:true}});
-    if(path==='/api/auth/me')return route.fulfill({json:{...member,requiresMfa:false,phoneRequired:scenario!=='sms-verified',factors:{...member.factors,phoneEnabled:true,phoneVerified:verified}}});
-    if(path==='/api/auth/factors')return route.fulfill({json:{passkeys:[],phoneEnabled:true,phoneVerified:verified,firebase:{apiKey:'synthetic',authDomain:'synthetic.firebaseapp.com',projectId:'synthetic',appId:'synthetic'}}});
+    if(path==='/api/auth/me')return route.fulfill({json:{...member,requiresMfa:false,phoneRequired:true,factors:{...member.factors,phoneEnabled:true,phoneVerified:false}}});
+    if(path==='/api/auth/factors')return route.fulfill({json:{passkeys:[],phoneEnabled:true,phoneVerified:false,firebase:{apiKey:'synthetic',authDomain:'synthetic.firebaseapp.com',projectId:'synthetic',appId:'synthetic'}}});
     return route.fulfill({json:{}});
   });
   await page.goto('/login');await expect(page.getByRole('heading',{name:'ยืนยันเบอร์มือถือครั้งแรก'})).toBeVisible();
@@ -145,20 +149,38 @@ test('new factor enrollment remains disabled until Authenticator and recovery se
   await page.goto('/login');await expect(page.getByRole('button',{name:'เพิ่ม Passkey',exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:'ผูกบัญชี LINE'})).toBeDisabled();
   await expect(page.getByText('เปิด Authenticator และเก็บ Recovery codes ก่อนเพิ่ม Passkeys หรือ LINE')).toBeVisible();
 });
-test('Admin who uses LINE can explicitly step up with TOTP to regain admin access',async({page})=>{
-  let fresh=false;
+test('Admin can choose LINE at login and defer admin access until explicit TOTP verification',async({page})=>{
+  let fresh=false,loggedIn=false,adminCalls=0;
   await page.route('**/api/**',route=>{
     const path=new URL(route.request().url()).pathname;
     if(path==='/api/auth/status')return route.fulfill({json:{configured:true}});
-    if(path==='/api/auth/me')return route.fulfill({json:{...member,user:{...member.user,role:'admin'},requiresMfa:false,mfaMethod:fresh?'totp':'line',adminMfaRequired:!fresh}});
-    if(path==='/api/auth/reauth'){expect(route.request().postDataJSON()).toEqual({code:'012345'});fresh=true;return route.fulfill({json:{ok:true}});}
+    if(path==='/api/auth/me')return route.fulfill({json:{...member,user:{...member.user,role:'admin'},requiresMfa:!loggedIn,mfaMethod:fresh?'totp':loggedIn?'line':'totp',adminMfaRequired:!fresh}});
+    if(path==='/api/auth/line/send')return route.fulfill({json:{challengeId:'admin-line-challenge',number:'42',reference:'LN-001122334455',retryAfter:60,expiresIn:180}});
+    if(path==='/api/auth/line/challenges/admin-line-challenge')return route.fulfill({json:{status:'approved'}});
+    if(path==='/api/auth/line/verify'){expect(route.request().headers()['x-csrf-token']).toBe('test-csrf');loggedIn=true;return route.fulfill({json:{ok:true}});}
+    if(path==='/api/auth/reauth'){expect(route.request().postDataJSON()).toEqual({code:'012345'});expect(route.request().headers()['x-csrf-token']).toBe('test-csrf');fresh=true;return route.fulfill({json:{ok:true}});}
     if(path==='/api/auth/factors')return route.fulfill({json:{passkeyEnabled:true,lineEnabled:true,line:true,passkeys:[]}});
+    if(path.startsWith('/api/admin/')){adminCalls++;expect(fresh).toBe(true);}
     return route.fulfill({json:{stats:{users:0,allowedEmails:0,applications:0,activeApiKeys:0,mfaEnabled:0,activeSessions:0},users:[],emails:[],applications:[],apiKeys:[],events:[],sessions:[],meta:{total:0,totalPages:0,currentPage:1,limit:10}}});
   });
-  await page.goto('/login');await page.getByRole('button',{name:'ยืนยันสิทธิ์ Admin'}).click();
-  const dialog=page.getByRole('dialog'),digits=dialog.locator('.otp-digits input');for(let i=0;i<6;i++)await digits.nth(i).fill('012345'[i]);
+  await page.goto('/login');
+  await expect(page.getByRole('heading',{name:'วิธีแนะนำ'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'เลือก Email OTP',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'เลือก LINE',exact:true}).click();
+  await expect(page.getByText(/เข้าใช้บัญชีด้วย LINE ได้/)).toBeVisible();
+  await page.getByRole('button',{name:'ยืนยันผ่าน LINE',exact:true}).click();
+  await expect(page.getByRole('button',{name:'ยืนยันสิทธิ์ Admin'})).toBeVisible();
+  await expect(page.getByRole('navigation').getByRole('button',{name:/^ผู้ใช้งาน/})).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);expect(adminCalls).toBe(0);
+  await page.getByRole('button',{name:'ยืนยันสิทธิ์ Admin'}).click();
+  const dialog=page.getByRole('dialog');await expect(dialog.getByRole('heading',{name:'ยืนยันสิทธิ์ผู้ดูแล'})).toBeVisible();
+  await dialog.getByRole('button',{name:'ปิดหน้าต่าง'}).click();await expect(dialog).toHaveCount(0);expect(adminCalls).toBe(0);
+  await page.getByRole('navigation').getByRole('button',{name:'เซสชัน',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'เซสชันของฉัน',exact:true})).toBeVisible();expect(adminCalls).toBe(0);
+  await page.getByRole('button',{name:'ยืนยันสิทธิ์ Admin'}).click();
+  const digits=dialog.locator('.otp-digits input');for(let i=0;i<6;i++)await digits.nth(i).fill('012345'[i]);
   await dialog.getByRole('button',{name:'ยืนยันและดำเนินการต่อ'}).click();await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('navigation').getByRole('button',{name:/^ผู้ใช้งาน/})).toBeVisible();expect(fresh).toBe(true);
+  await expect(page.getByRole('navigation').getByRole('button',{name:/^ผู้ใช้งาน/})).toBeVisible();expect(fresh).toBe(true);expect(adminCalls).toBeGreaterThan(0);
 });
 
 test('admin kill switch targets sessions while keeping the user in the directory',async({page})=>{

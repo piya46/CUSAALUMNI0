@@ -1,0 +1,27 @@
+.mfa-method-groups { display:grid; gap:22px; margin:24px 0; text-align:left; }
+.mfa-group-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.mfa-group-heading h2 { display:flex; align-items:center; gap:7px; font-size:14px; color:#6e4319; }
+.mfa-group-heading>span { color:#846b51; font-size:11px; line-height:1.7; }
+.mfa-method-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.mfa-method-choice { display:flex; flex-direction:column; align-items:flex-start; gap:7px; text-align:left; border:1px solid #eadbc4; border-radius:14px; padding:15px; background:#fffdfa; min-width:0; transition:border-color .18s,background .18s,box-shadow .18s; }
+.mfa-method-choice:hover:not(:disabled) { border-color:#cf9d58; background:#fff8e9; }
+.mfa-method-choice[aria-pressed="true"] { border-color:#be741f; background:#fff3d6; box-shadow:0 0 0 1px #be741f; }
+.mfa-choice-top { display:flex; align-items:center; justify-content:space-between; width:100%; color:#ab671e; }
+.mfa-choice-check { width:18px; height:18px; border-radius:50%; border:1px solid #ddccb1; display:grid; place-items:center; }
+.mfa-method-choice[aria-pressed="true"] .mfa-choice-check { background:#a55c16; border-color:#a55c16; color:#fff; }
+.mfa-method-choice strong { font-size:14px; color:#56391d; }
+.mfa-method-choice small { font-size:12px; line-height:1.7; color:#78644e; }
+.mfa-challenge { padding:22px; border:1px solid #ead9bc; border-radius:17px; background:#fffcf5; text-align:left; }
+.mfa-challenge h2 { font-size:18px; color:#68421f; border-radius:4px; }
+.mfa-challenge-description { font-size:13px; color:#806a52; line-height:1.8; margin:6px 0 17px; }
+.mfa-challenge .extra-mfa { margin:0; padding:0; border:0; }
+.mfa-challenge .button { min-height:46px; }
+.mfa-challenge .inline-error { margin:12px 0; }
+.mfa-access-note { display:flex; align-items:flex-start; gap:8px; margin:18px 0 0; padding-top:14px; border-top:1px solid #efdfc7; font-size:12px; line-height:1.85; color:#76572f; }
+.mfa-access-note>svg { margin-top:3px; flex-shrink:0; }
+.mfa-recovery-group { text-align:left; margin:24px 0 10px; }
+.mfa-recovery-group .mfa-method-choice { background:#fff; }
+.mfa-recovery-group .mfa-method-choice[aria-pressed="true"] { background:#fff3d6; }
+#mfa-challenge-title:focus-visible { outline:2px solid #bd8d4c; outline-offset:5px; }
+@media(max-width:480px) { .mfa-method-choice { padding:12px; } .mfa-challenge { padding:17px 13px; } .mfa-group-heading { align-items:flex-start; } }
+@media(prefers-reduced-motion:reduce) { .mfa-method-choice { transition:none; } }

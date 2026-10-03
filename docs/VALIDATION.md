@@ -1,5 +1,14 @@
 # Validation record
 
+## Categorized MFA choices and deferred Admin access — 2026-10-04
+
+- The MFA page after Google now groups enrolled, enabled methods into recommended (TOTP/Passkey), other eligible methods (LINE or Email OTP), and account recovery. Selecting a method switches the input panel without automatically sending a code, sending LINE or invoking WebAuthn. The first sign-in step remains Google/allowlist-bound.
+- Admin may choose enrolled LINE, use personal account/session pages, and later explicitly open Admin access with TOTP or Passkey. Cancelling elevation neither fetches admin data nor exposes admin navigation. Existing backend assurance/freshness, recovery and required-phone policies are unchanged.
+- **29 targeted browser scenarios passed across runs**: 27 in the initial run, followed by the two corrected fixture cases. One inherited required-phone fixture referenced out-of-scope scenario variables; the new session-navigation check used an incorrect heading. Both fixtures were corrected and passed. No production configuration was used.
+- Coverage includes LINE → personal account → cancel elevation → TOTP elevation, LINE → Passkey elevation → fresh sensitive operation → stale reauthentication, direct TOTP/Passkey admin entry, grouped eligible/disabled factors, keyboard focus, mobile layout, recovery entry, SMS confirmation/reminder and preservation of LINE resend cooldown when switching methods.
+- Five server hardening checks passed, including rejection of LINE/email/recovery at admin gates and locked mutation checks. No backend policy or schema was loosened. Provider requests in browser tests are mocked; these checks do not verify actual LINE delivery or production Passkeys.
+- Production build and release packaging completed. No new migration, dependency or `.env` setting; deploy the complete new release and restart the app. Real host/provider checks remain as listed below.
+
 ## Admin Passkey assurance and phone reminder — 2026-10-04
 
 - Production server/React build passes; no new dependencies, database migration or private `.env` changes.
