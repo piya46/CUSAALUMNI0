@@ -7,7 +7,7 @@
 1. ผู้ใช้เข้าสู่ระบบด้วย Google ที่อยู่ใน Allowlist
 2. บัญชีที่ยังไม่เปิด TOTP ใช้ Email OTP พร้อม Ref; บัญชีที่เปิด TOTP เลือก TOTP, Recovery code, Passkey หรือ LINE ที่ผูกไว้แล้วได้
 3. การผูก/ถอด Passkey หรือ LINE ต้องมี TOTP และยืนยัน TOTP ภายใน 5 นาที ระบบแสดงหน้าต่างยืนยันใหม่เมื่อจำเป็น การเข้าสู่ระบบด้วย Recovery code ต้องตั้ง Authenticator ใหม่ก่อนจัดการวิธีสำรอง
-4. Admin ที่ยืนยันด้วย Passkey/LINE ต้องกด **ยืนยันสิทธิ์ Admin** และกรอก TOTP ก่อนเปิดเมนูดูแลระบบ
+4. หน้า MFA ของ Admin พาไปยืนยัน Authenticator โดยตรง เพื่อเข้าสู่พื้นที่ผู้ดูแลด้วย TOTP ครั้งเดียว การเปิดอ่านหน้าต่าง ๆ ไม่ถามซ้ำ การเปลี่ยนสิทธิ์/เปิดหลักฐานยังต้องมี TOTP ภายใน 5 นาที หากมีเซสชันเก่าที่เข้าด้วย Passkey/LINE ให้กด **ยืนยันสิทธิ์ Admin** ก่อนเปิดเมนูดูแลระบบ
 5. Firebase SMS ใช้ยืนยันเบอร์ครั้งแรก ไม่ทำให้ session ผ่าน MFA และไม่เปิดให้ใช้เบอร์เป็นบัญชีหลักแทน Google หากเปิด `FIREBASE_PHONE_REQUIRED=true` จะบังคับเฉพาะบัญชีที่สร้างหลังเปิดนโยบายนี้ ทั้งหน้าเว็บและการออก/แลก/ตรวจ token ฝั่ง SSO ตรวจสถานะเบอร์
 6. ปิด TOTP, ตั้ง TOTP ใหม่ หรืออนุมัติคำขอรีเซ็ต MFA จะถอน Passkeys และ LINE เดิม พร้อมยกเลิก challenge และ session ที่เกี่ยวข้อง เบอร์ที่ผ่านการตรวจแล้วเป็นข้อมูลแยก ไม่ใช้แทน MFA
 
@@ -97,6 +97,20 @@ Firebase auth state อยู่ใน memory เท่านั้น; หล�
 
 อ้างอิง: [Firebase Phone Auth](https://firebase.google.com/docs/auth/web/phone-auth), [Admin ID token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Firebase limits](https://firebase.google.com/docs/auth/limits)
 
+### เมื่อส่ง SMS ไม่สำเร็จ
+
+หน้าเว็บแสดงรหัส Firebase ที่รู้จัก เช่น `auth/configuration-not-found` หรือ `auth/unauthorized-domain` เพื่อแจ้งผู้ดูแล โดยไม่แสดง provider message, customData, token หรือข้อมูลบัญชีจาก error ทั้งก้อน รหัสที่ไม่รู้จักยังใช้ข้อความกลาง ไม่มีการปิด reCAPTCHA หรือผ่อน cooldown เพื่อแก้ปัญหา
+
+- `POST /api/auth/phone/start` ตอบ 429: ดู `Retry-After` ใน Response Headers แล้วรอให้ครบ มีทั้ง cooldown 60 วินาทีและเพดาน 3 ครั้งใน 10 นาที การขอเริ่มที่ผ่านก่อน Firebase ล้มเหลวยังคงนับ ไม่กดซ้ำต่อเนื่องหรือเปลี่ยน IP เพื่อข้ามข้อจำกัด
+- `GET /v2/recaptchaConfig` ตอบ 404: ยังสรุปว่าเป็นต้นเหตุไม่ได้ SDK สามารถเปลี่ยนไปใช้ reCAPTCHA v2 ตาม [Firebase SDK](https://github.com/firebase/firebase-js-sdk/blob/main/packages/auth/src/platform_browser/strategies/phone.ts)
+- `GET /v1/recaptchaParams` ตอบ 400: เปิด **DevTools → Network → recaptchaParams → Response** อ่าน `error.message` ของคำขอที่ล้มเหลว ต้องใช้ Response ไม่ใช่เพียง stack trace จาก Console ผล GET จากเครื่องอื่นที่เป็น 200 ไม่ยืนยันว่า request จาก browser มี headers/config เหมือนกันหรือส่ง SMS ได้
+- `POST /v1/accounts:sendVerificationCode` ตอบ 400 พร้อม `OPERATION_NOT_ALLOWED : SMS unable to be sent until this region enabled by the app developer.`: เข้า **Firebase Authentication → Settings → SMS region policy** อนุญาตประเทศปลายทางที่ใช้งาน (เช่น Thailand/TH สำหรับ +66) แล้ว Save คงข้อจำกัดประเทศอื่นไว้ตามนโยบาย รอ cooldown/Retry-After แล้วลองใหม่ ไม่ต้องแก้ `.env`, migration หรือ reCAPTCHA เพื่อแก้ region policy นี้
+- `auth/configuration-not-found` / `auth/operation-not-allowed`: ตรวจ Firebase Project ที่ตรงกับ Web config, การเริ่มใช้งาน Authentication และ Phone provider
+- `auth/unauthorized-domain` / `auth/app-not-authorized` / `auth/invalid-api-key`: ตรวจ Authorized domains และข้อจำกัด API key โดยคงข้อจำกัดให้อนุญาตเฉพาะเว็บไซต์/API ที่จำเป็น
+- `auth/billing-not-enabled` / `auth/quota-exceeded`: ตรวจ billing และ SMS quota ที่ Firebase อย่าถือว่าการกด retry จะแก้ configuration ได้
+
+หลังเปลี่ยน `.env` บน Host ให้ Restart App และ reload หน้าเว็บเพื่อโหลด Firebase app configuration ใหม่ หากแก้เฉพาะการตั้งค่าใน Firebase Console ไม่ต้อง build React ใหม่ การตรวจ GET configuration ไม่ส่ง SMS และไม่ตรวจ billing, phone provider หรือการส่งข้อความจริงครบทุกขั้นตอน
+
 ## API ของหน้า CUSA (ไม่ใช้เป็น Service API)
 
 ทุก API ใต้ตารางต้องมี cookie ของเจ้าของบัญชี; POST/DELETE ต้องมี Origin ตรง APP_ORIGIN และ X-CSRF-Token ยกเว้น LINE webhook ที่ตรวจลายเซ็นผู้ให้บริการ Callback เป็น GET ที่มี state/nonce แยก
@@ -126,3 +140,18 @@ Firebase auth state อยู่ใน memory เท่านั้น; หล�
 ใช้บัญชีทดสอบที่อนุญาตจริง: Google → TOTP → เพิ่ม Passkey → logout → Google → Passkey; ผูก LINE → logout → Google → Number Matching ถูก/ผิด/ปฏิเสธ; Firebase project ทดสอบ → reCAPTCHA → SMS → ตรวจเบอร์ยืนยันโดยไม่เปลี่ยนวิธี MFA; และ account ใหม่แบบ required ต้องถูกบล็อกก่อนยืนยัน
 
 ตรวจ browser console CSP, proxy, provider quota, เวลา server, schema/runtime grants, LINE callback/webhook Verify และลองเลิกผูก/รีเซ็ต MFA ด้วยหลักฐานจำลอง ผล automated test ในเครื่องไม่แทนการทดสอบ provider จริงบน Host
+
+## ประสบการณ์ใช้งานและข้อความยืนยัน (ตุลาคม 2026)
+
+- `/` และ `/login` เป็นหน้า Login โดยตรง ธีมเหลืองส้ม ใช้งานบนมือถือได้ พร้อมรองรับ Reduce Motion ของอุปกรณ์
+- เบอร์มือถือกรอกแบบไทย 10 หลัก เช่น `081 234 5678` ได้ รวมถึงเลขไทยและการวาง `+66812345678` ระบบแปลงเป็น E.164 ก่อนส่ง API และ Firebase ทั้งสองจุด ไม่เปลี่ยนหมายเลขโดยเดาเลขที่ขาด ไม่รับเบอร์บ้านหรือหมายเลขต่างประเทศผ่านฟอร์มนี้
+- หน้า SMS ระบุว่าใช้ยืนยันการถือครองเบอร์สำหรับบัญชี CUSA SSO พร้อมชื่อ Service จาก login context ที่ backend ตรวจแล้วถ้ามี ไม่ใช้ SMS แทน MFA คง consent, reCAPTCHA, CSRF, cooldown อย่างน้อย 60 วินาที และเพดานคำขอเดิม
+- **Firebase SMS ไม่รองรับข้อความกำหนดเองหรือ Ref ต่อคำขอ**: `smsTemplate.content` เป็น output-only และ `%APP_NAME%` ของ Web ใช้โดเมน จึงบังคับซ่อนโดเมนหรือแทนชื่อ Service จากโค้ดนี้ไม่ได้ UI ไม่สร้าง Ref ปลอมอ้างว่าตรงกับ SMS หากต้องการข้อความ SMS กำหนดเอง ต้องเปลี่ยนไปผู้ให้บริการที่รองรับและออกแบบการตรวจ OTP ฝั่ง server ใหม่ ดู [Google SMS template](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/Config#SmsTemplate)
+- LINE ใช้ Flex Card โทนเหลืองส้ม พร้อมชื่อ Service ที่อ่านจาก session/application ฝั่ง server, Ref `LN-…`, อายุ 3 นาที, ปุ่มเลข 3 ตัวเลือกและปุ่มปฏิเสธ เลขถูกไม่ถูกเน้นแตกต่างจากตัวเลือกอื่น Ref ใช้จับคู่ข้อความกับหน้าจอ ไม่ใช้เป็นหลักฐานอนุมัติ
+- หลังคลิกปุ่ม LINE ระบบตรวจลายเซ็น webhook, บัญชีที่ผูก, อายุคำขอ และบันทึกผลพร้อม Audit ก่อนส่ง **การ์ดผลลัพธ์ใหม่ผ่าน Reply API** การ์ดอนุมัติระบุว่า “ยืนยันเลขสำเร็จ” และให้กลับไปหน้าจอเดิม ยังไม่อ้างว่า browser ล็อกอินสำเร็จก่อน consume challenge
+- LINE Messaging API ที่ใช้ไม่มี endpoint สำหรับแก้/ลบ Flex ที่บอตส่งไปแล้ว การ์ดเดิมยังอยู่ในประวัติ แต่ปุ่มเดิมไม่เปลี่ยนผลและใช้ซ้ำไม่ได้ การ์ดผลล่าสุดไม่มีปุ่มอนุมัติซ้ำ ดู [Messaging API reference](https://developers.line.biz/en/reference/messaging-api/#send-reply-message)
+- ส่ง Reply เฉพาะตอนผลเปลี่ยนครั้งแรก ไม่ส่งซ้ำจาก webhook replay ถ้าส่ง Reply ไม่สำเร็จจะบันทึก `auth.line.reply.failure` แบบไม่เปิดเผย token โดยไม่ย้อนผล MFA; หน้าจอ browser ยังคงอ่านผลจาก server ได้ การแจ้งเตือน LINE เป็น best effort ไม่มีคิว retry ที่จะใช้ reply token หมดอายุซ้ำ
+- เว็บแจ้งเข้าสู่ระบบสำเร็จเมื่อ `/auth/me` ยืนยันว่าผ่าน MFA และ phone gate ครบแล้วเท่านั้น ไม่เชื่อ `auth=success` ใน URL เพียงอย่างเดียว ไม่ขอสิทธิ์ browser notifications และไม่มีการส่ง SMS/LINE เพิ่มทุกครั้งที่เปิดหน้า
+- หน้า MFA มีปุ่ม **ขอรีเซ็ต MFA** สำหรับเจ้าของบัญชีหลัง Google Login ใช้ขั้นตอนแนบหลักฐานเดิม ใส่ลายน้ำ/เข้ารหัสและรอผู้ดูแล ไม่มีปุ่มข้าม MFA การอนุมัติและกำหนดลบเอกสารไม่เปลี่ยน
+
+รอบนี้ไม่มี schema migration หรือ `.env` ใหม่ Deploy release, Restart App แล้วทดสอบเบอร์/LINE จริงด้วยบัญชีทดสอบที่ผูกไว้ การทดสอบอัตโนมัติจำลอง provider ไม่ส่ง SMS หรือ LINE จริง ยังต้องเปิด Thailand ใน Firebase SMS region policy หากพบ `OPERATION_NOT_ALLOWED` เรื่อง region.

@@ -3,6 +3,7 @@ import { execute, query, transaction } from '../db.js';
 import { hashToken, randomToken, seal, unseal } from '../services/crypto.js';
 import { HttpError } from '../middleware/security.js';
 import { requireLine, lineLoginUrl, exchangeLine, sendLineMatching } from '../services/line.js';
+import { lineReference } from '../services/lineMessages.js';
 import { failure, promote, OtpCooldownError, type AuthAudit } from './authModel.js';
 import { createFactorChallenge, factorChallenge, factorFingerprint, lockFactorSession, type FactorRow } from './factorModel.js';
 
@@ -46,6 +47,7 @@ export async function unlinkLine(sessionId:string,record:AuthAudit){
 export async function startLineChallenge(sessionId:string,record:AuthAudit){
   requireLine();const issued=await transaction(async conn=>{
     const s=await lockFactorSession(sessionId,conn,'pending');
+    const [application]=await query<FactorRow>('SELECT a.name FROM sessions s JOIN applications a ON a.id=s.login_application_id AND a.revoked_at IS NULL WHERE s.id=?',[sessionId],conn);
     const [link]=await query<FactorRow>('SELECT subject_encrypted FROM line_identities WHERE user_id=?',[s.user_id],conn);
     if(!link)throw new HttpError(409,'ยังไม่ได้ผูก LINE','LINE_UNAVAILABLE');
     const [cooldown]=await query<FactorRow>('SELECT GREATEST(0,CEIL(60-TIMESTAMPDIFF(MICROSECOND,line_sent_at,UTC_TIMESTAMP(3))/1000000)) AS seconds FROM users WHERE id=?',[s.user_id],conn);
@@ -58,13 +60,13 @@ export async function startLineChallenge(sessionId:string,record:AuthAudit){
     const payload={factor:factorFingerprint(s),subjectHash:hashToken(`line:${unseal(link.subject_encrypted)}`),choices:choices.map(c=>({hash:hashToken(c.value),correct:c.label===number}))};
     const id=await createFactorChallenge(sessionId,'line_auth',payload,conn);
     await record(conn,'auth.line.requested',s.user_id);
-    return {id,number,choices,subject:unseal(link.subject_encrypted)};
+    return {id,number,choices,subject:unseal(link.subject_encrypted),applicationName:application?.name as string|undefined};
   });
-  try{await sendLineMatching(issued.subject,issued.id,issued.choices);}catch{
+  try{await sendLineMatching(issued.subject,issued.id,issued.choices,issued.applicationName);}catch{
     await transaction(async conn=>{await execute("UPDATE factor_challenges SET status='denied' WHERE id=?",[issued.id],conn);await record(conn,'auth.line.delivery.failure',undefined,{failure_reason:'LINE_UNAVAILABLE'});});
     throw new HttpError(503,'ส่ง LINE ไม่สำเร็จ ตรวจสอบว่าเพิ่มเพื่อน Official Account แล้ว หรือลอง Authenticator','LINE_UNAVAILABLE');
   }
-  return {challengeId:issued.id,number:issued.number,expiresIn:180,retryAfter:60};
+  return {challengeId:issued.id,number:issued.number,reference:lineReference(issued.id),expiresIn:180,retryAfter:60};
 }
 // Signed LINE callbacks approve a challenge only. The originating browser must
 // subsequently consume it with its own cookie and CSRF token to receive a session.
@@ -81,6 +83,7 @@ export async function applyLineChoice(id:string,subject:string,choice:string,rec
     await execute('UPDATE factor_challenges SET status=? WHERE id=?',[match.correct?'approved':'denied',id],conn);
     if(!match.correct)await failure(s.user_id,conn,record);
     await record(conn,match.correct?'auth.line.approved':'auth.line.failure',s.user_id,{challengeId:id});
+    return match.correct ? 'approved' as const : 'denied' as const;
   });
 }
 export async function lineChallengeStatus(sessionId:string,id:string){

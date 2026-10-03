@@ -60,7 +60,7 @@ test('signed LINE Number Matching binds sender and browser, has persistent coold
   try{
     const issued=await line.startLineChallenge(s.sessionId,audit);assert.equal(sent.to,s.subject);
     await assert.rejects(line.startLineChallenge(s.sessionId,audit),{message:'OTP_COOLDOWN'});
-    const action=sent.messages[0].template.actions.find((a:any)=>a.label===issued.number),choice=new URLSearchParams(action.data).get('choice')!;
+    const action=sent.messages[0].contents.footer.contents.flatMap((item:any)=>item.contents?item.contents.map((button:any)=>button.action):[item.action]).find((a:any)=>a.label===issued.number),choice=new URLSearchParams(action.data).get('choice')!;
     await line.applyLineChoice(issued.challengeId,`U${'0'.repeat(32)}`,choice,audit);assert.equal((await line.lineChallengeStatus(s.sessionId,issued.challengeId)).status,'pending');
     const app=createApp(),body=JSON.stringify({events:[{type:'postback',timestamp:Date.now(),source:{type:'user',userId:s.subject},postback:{data:action.data}}]});
     const signature=createHmac('sha256',config.lineMessagingChannelSecret).update(body).digest('base64');
@@ -74,7 +74,7 @@ test('signed LINE Number Matching binds sender and browser, has persistent coold
 });
 test('wrong LINE choice is final; duplicate callbacks cannot approve or multiply failures',{skip:!enabled},async()=>{
   const s=await linked();let sent:any;globalThis.fetch=async(_url,init)=>{sent=JSON.parse(String(init?.body));return Response.json({});};
-  try{const issued=await line.startLineChallenge(s.sessionId,audit),actions=sent.messages[0].template.actions;
+  try{const issued=await line.startLineChallenge(s.sessionId,audit),actions=sent.messages[0].contents.footer.contents.flatMap((item:any)=>item.contents?item.contents.map((button:any)=>button.action):[item.action]);
     const wrong=actions.find((a:any)=>a.label==='ปฏิเสธ'),right=actions.find((a:any)=>a.label===issued.number);
     const value=(a:any)=>new URLSearchParams(a.data).get('choice')!;
     await line.applyLineChoice(issued.challengeId,s.subject,value(wrong),audit);await line.applyLineChoice(issued.challengeId,s.subject,value(right),audit);

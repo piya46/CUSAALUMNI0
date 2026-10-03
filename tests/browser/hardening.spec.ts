@@ -2,12 +2,17 @@ import { test,expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 const pending={user:{id:'user-test',email:'member@example.test',name:'Member',role:'user',totpEnabled:false},csrfToken:'test-csrf',requiresMfa:true,mfaMethod:'email',otp:{reference:null,expiresAt:null,retryAfter:0}};
 
-test('public homepage explains CUSA SSO and Google data without an authenticated API',async({page})=>{
-  const calls:string[]=[];page.on('request',r=>{if(r.url().includes('/api/'))calls.push(r.url());});
-  await page.goto('/');await expect(page.getByRole('heading',{name:'CUSA SSO',exact:true})).toBeVisible();
-  await expect(page.getByRole('heading',{name:'ข้อมูล Google ที่เราใช้'})).toBeVisible();
-  await expect(page.getByRole('link',{name:'เข้าสู่ระบบด้วยบัญชี Google'})).toHaveAttribute('href','/login');
-  expect(calls).toEqual([]);await page.screenshot({path:'test-results/homepage.png',fullPage:true});
+test('root opens the public login directly with branding and expandable Google data disclosure',async({page})=>{
+  await page.route('**/api/auth/status',r=>r.fulfill({json:{configured:true}}));
+  await page.route('**/api/auth/me',r=>r.fulfill({status:401,json:{error:'Unauthenticated'}}));
+  await page.goto('/');await expect(page.getByRole('heading',{name:'เข้าสู่ระบบ',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'ดำเนินการต่อด้วย Google'})).toHaveAttribute('href','/api/auth/google/start');
+  await page.getByText('ใช้ข้อมูลอะไรจาก Google บ้าง?').click();
+  await expect(page.getByText(/การเข้าสู่ระบบไม่ขอสิทธิ์อ่านกล่องจดหมาย/)).toBeVisible();
+  await page.screenshot({path:'test-results/login-amber-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.getByText('ใช้ข้อมูลอะไรจาก Google บ้าง?').click();
+  await page.screenshot({path:'test-results/login-amber-mobile.png',fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
 test('six OTP fields accept paste, backspace and leading zero, show Ref and survive cooldown reload',async({page})=>{
@@ -62,7 +67,7 @@ test('owner submits an MFA reset from the pending TOTP screen with a privacy not
     }
     return r.fulfill({json:{enabled:true,request:submitted?{id:'request-test',status:'pending',createdAt:new Date().toISOString(),deleteAfter:new Date(Date.now()+86400000).toISOString()}:null}});
   });
-  await page.goto('/login');await page.getByRole('button',{name:'ไม่มีเครื่องเดิมและ Recovery code'}).click();
+  await page.goto('/login');await page.getByRole('button',{name:'ขอรีเซ็ต MFA'}).click();
   await expect(page.getByRole('heading',{name:'ขอเปลี่ยน Authenticator'})).toBeVisible();
   await expect(page.getByText(/ปิดเลขบัตร/)).toBeVisible();
   await page.locator('input[type=file]').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:Buffer.from('synthetic test only')});

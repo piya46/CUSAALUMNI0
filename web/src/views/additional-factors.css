@@ -1,1 +1,30 @@
-.additional-factors{padding:24px;display:grid;gap:22px}.additional-factors section+section{border-top:1px solid #e5e9e8;padding-top:22px}.additional-factors h3{display:flex;align-items:center;gap:10px;margin:0 0 10px}.additional-factors p,.phone-verification p{font-size:14px;line-height:1.75;color:#536362}.additional-factors form{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.additional-factors form .field{flex:1;min-width:160px}.factor-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:16px}.extra-mfa{border-top:1px solid #e5e9e8;margin-top:24px;padding-top:12px;display:grid;gap:12px}.extra-mfa>p{text-align:center;font-size:14px;color:#536362}.number-matching{text-align:center;background:#f1f7f3;border-radius:12px;padding:18px}.number-matching strong{display:block;font-size:54px;letter-spacing:8px;color:#184d3d}.number-matching small{display:block;line-height:1.7}.phone-verification{display:grid;gap:14px;max-width:100%}.phone-verification form{display:grid;gap:12px}.phone-verification .checkbox-row{align-items:start;line-height:1.7;font-size:13px}.phone-verification a{color:#286851;text-decoration:underline}.phone-verification iframe{max-width:100%}@media(max-width:480px){.additional-factors{padding:16px}.phone-verification .g-recaptcha{transform-origin:left top}}
+.additional-factors{padding:24px;display:grid;gap:22px}.additional-factors section+section{border-top:1px solid #e9e7e5;padding-top:22px}.additional-factors h3{display:flex;align-items:center;gap:10px;margin:0 0 10px}.additional-factors p,.phone-verification p{font-size:14px;line-height:1.75;color:#645d52}.additional-factors form{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.additional-factors form .field{flex:1;min-width:160px}.factor-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:16px}.extra-mfa{border-top:1px solid #e9e7e5;margin-top:24px;padding-top:12px;display:grid;gap:12px}.extra-mfa>p{text-align:center;font-size:14px;color:#645d52}.number-matching{text-align:center;background:#f7f5f1;border-radius:12px;padding:18px}.number-matching strong{display:block;font-size:54px;letter-spacing:8px;color:#4d3818}.number-matching small{display:block;line-height:1.7}.phone-verification{display:grid;gap:14px;max-width:100%}.phone-verification form{display:grid;gap:12px}.phone-verification .checkbox-row{align-items:start;line-height:1.7;font-size:13px}.phone-verification a{color:#684e28;text-decoration:underline}.phone-verification iframe{max-width:100%}@media(max-width:480px){.additional-factors{padding:16px}.phone-verification .g-recaptcha{transform-origin:left top}}
+/* Thai phone entry: keep the number local on screen and normalize at submission. */
+.phone-verification { text-align:left; gap:18px; }
+.phone-steps { display:flex; gap:12px; list-style:none; padding:0; margin:0; font-size:12px; }
+.phone-steps li { display:flex; align-items:center; gap:7px; color:#88755e; flex:1; }
+.phone-steps li>span { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; background:#f2ece2; color:#796954; font-weight:600; }
+.phone-steps .current { color:#915015; font-weight:600; }
+.phone-steps .current>span,.phone-steps .complete>span { background:#ffdf9c; color:#77400c; }
+.phone-purpose { display:flex; gap:10px; padding:15px; border:1px solid #f0e1c7; background:#fffaef; border-radius:13px; color:#a46426; }
+.phone-purpose>svg { margin-top:4px; }
+.phone-purpose strong { font-size:13px; color:#654624; }
+.phone-purpose small,.phone-purpose span { display:block; font-size:12px; color:#7b684f; line-height:1.8; margin-top:5px; }
+.phone-input-group { display:flex; align-items:center; border:1px solid #d9c5a9; border-radius:12px; background:#fff; transition:box-shadow .2s; margin-top:8px; }
+.phone-input-group:focus-within { border-color:#ac6119; box-shadow:0 0 0 3px #ffeac5; }
+.phone-country { display:flex; align-items:center; gap:7px; padding:10px 12px; border-right:1px solid #ede1cd; font-size:19px; flex-shrink:0; }
+.phone-country>span { font-size:12px; line-height:1.6; color:#664b30; }
+.phone-country small { display:block; font-size:11px; color:#846d50; }
+.phone-verification .field .phone-input-group input { width:100%; min-width:0; flex:1; border:0; border-radius:0 12px 12px 0; padding:14px 10px; box-shadow:none; outline:none; font-size:17px; letter-spacing:.4px; background:transparent; color:#49331e; }
+.phone-valid { color:#3c7952; margin-right:12px; }
+.phone-invalid { font-size:12px; color:#a8392a; }
+.phone-verification .field { margin:0; gap:4px; }
+.phone-verification .field-hint { font-size:12px; display:block; line-height:1.8; margin-top:7px; }
+.phone-verification .button { min-height:48px; border-radius:11px; }
+.phone-verification .checkbox-row { margin:0; padding:0; color:#79654c; }
+.phone-verification .checkbox-row input { margin-top:5px; }
+.phone-verification .sms-confirmation { background:#fffbf2; border:1px solid #f1e2c7; padding:20px 16px; border-radius:15px; margin-top:0; animation:reveal-up .25s ease-out; }
+.sms-confirmation .sms-delivered { color:#466545; font-size:13px; }
+.sms-delivered svg { margin-right:6px; }
+.sms-confirmation small { color:#77634c; line-height:1.8; font-size:12px; }
+.factor-success { display:flex; gap:8px; align-items:center; }

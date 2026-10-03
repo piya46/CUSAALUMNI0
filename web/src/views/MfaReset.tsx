@@ -1,11 +1,13 @@
 import { useEffect,useState } from 'react';
 import { api,apiFile,apiUpload } from '../models/api';
 import { Modal,SectionHeading,date } from '../components/ui';
+import { FileImage, ShieldCheck } from 'lucide-react';
 import './mfa-reset.css';
 type ResetRequest={id:string;userId:string;status:string;reason:string;createdAt:string;deleteAfter:string;purgedAt:string|null;email?:string;name?:string;userRole?:string;firstApprovedBy?:string|null};
 const statusLabels:Record<string,string>={uploading:'กำลังรับหลักฐาน',pending:'รอพิจารณา',pending_second:'รอผู้ดูแลคนที่สอง',approved:'อนุมัติแล้ว',rejected:'ไม่อนุมัติ',expired:'คำขอหมดอายุ',cancelled:'คำขอถูกยกเลิก'};
 export function MfaResetRequest(){
   const [item,setItem]=useState<ResetRequest|null>(null),[enabled,setEnabled]=useState(false),[loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [fileName,setFileName]=useState('');
   async function load(){try{const result=await api<{request:ResetRequest|null;enabled:boolean}>('/auth/mfa-reset');setItem(result.request);setEnabled(result.enabled);}catch(e){setError((e as Error).message);}finally{setLoaded(true);}}
   useEffect(()=>{void load();},[]);
   const waiting=item&&['uploading','pending','pending_second'].includes(item.status)&&new Date(item.deleteAfter)>new Date();
@@ -16,7 +18,8 @@ export function MfaResetRequest(){
     {enabled&&!waiting&&<form onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;setBusy(true);setError('');try{const data=new FormData(form);data.set('noticeVersion','2026-09-30');await apiUpload('/auth/mfa-reset',data);form.reset();await load();}catch(err){setError((err as Error).message);}finally{setBusy(false);}}}>
       <label className="field">เหตุผล<select name="reason" required><option value="replaced">เปลี่ยนเครื่อง</option><option value="lost">เครื่องสูญหาย</option><option value="damaged">เครื่องเดิมใช้งานไม่ได้</option></select></label>
       <div className="evidence-notice"><strong>เตรียมหลักฐานอย่างปลอดภัย</strong><p>แนบภาพถ่ายตัวคุณคู่เอกสารยืนยันตัวตน เช่น บัตรประชาชน โดยปิดเลขบัตร ที่อยู่ วันเกิด ศาสนา กรุ๊ปเลือด และข้อมูลอื่นที่ไม่จำเป็นก่อนถ่าย ให้เห็นเพียงชื่อและภาพเจ้าของเอกสาร ไม่ส่งภาพหลังบัตรหรือรหัส Laser ID</p><p>ใช้เพื่อพิจารณาคำขอเปลี่ยน MFA เท่านั้น ภาพจะถูกใส่ลายน้ำและเข้ารหัส ผู้ดูแลที่ได้รับสิทธิ์เท่านั้นเปิดตรวจได้ ลบภายใน 7 วันหลังอนุมัติหรือปฏิเสธ คำขอที่ค้างไม่เกิน 30 วัน เก็บประวัติการตัดสินใจโดยไม่มีภาพต่อเพื่อความปลอดภัย</p><a href="/privacy" target="_blank" rel="noopener noreferrer">อ่านนโยบายการใช้หลักฐาน</a></div>
-      <label className="field">ภาพหลักฐาน JPEG / PNG · ไม่เกิน 5 MB<input name="evidence" type="file" accept="image/jpeg,image/png" required disabled={busy}/></label>
+      <label className="evidence-upload"><FileImage size={28}/><strong>{fileName||'เลือกภาพหลักฐาน'}</strong><span>ภาพหลักฐาน JPEG / PNG · ไม่เกิน 5 MB</span><input name="evidence" type="file" accept="image/jpeg,image/png" required disabled={busy} onChange={e=>setFileName(e.target.files?.[0]?.name??'')}/></label>
+      <p className="evidence-security"><ShieldCheck size={16}/>ใส่ลายน้ำและเข้ารหัสก่อนจัดเก็บ</p>
       <label className="checkbox-row"><input name="acknowledged" type="checkbox" value="true" required/><span>รับทราบวัตถุประสงค์ ระยะเก็บ และปิดข้อมูลที่ไม่จำเป็นในภาพแล้ว</span></label>
       <button className="button primary full-width" disabled={busy}>{busy?'กำลังเข้ารหัสและส่งหลักฐาน…':'ส่งคำขอให้ผู้ดูแลพิจารณา'}</button>
     </form>}

@@ -1,20 +1,16 @@
 import { ExtraMfa } from './AdditionalFactors';
-import { useEffect, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
-import { ArrowRight, CircleAlert, Globe2, LockKeyhole, Mail, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
+import { ArrowLeft, ArrowRight, CircleAlert, Globe2, KeyRound, LockKeyhole, Mail, RefreshCw, ShieldCheck, LifeBuoy } from 'lucide-react';
 import { MfaResetRequest } from './MfaReset';
 import { OtpInput } from '../components/OtpInput';
 import { api, ApiError } from '../models/api';
 import type { Identity, OtpState } from '../models/types';
 import type { LoginContext } from '../models/login';
-import { Brand } from '../components/ui';
-import { LegalLinks } from '../components/LegalLinks';
+import { AuthLayout } from '../components/AuthLayout';
 import './auth.css';
 
 export interface ServerStatus { configured: boolean; mailConfigured: boolean; googleConfigured: boolean }
-function AuthLayout({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
-  return <div className="auth-page"><main className="auth-main"><header className="auth-brand"><Brand /></header><section className="auth-card">{children}</section>{footer}</main><footer className="auth-footer"><LegalLinks /><span>© {new Date().getFullYear()} CUSA SSO</span></footer></div>;
-}
 function ApplicationContext({ context }: { context?: LoginContext | null }) {
   if (!context) return null;
   return <div className="auth-application"><span className="auth-application-icon"><Globe2 size={20} /></span><div><span>เข้าสู่ระบบเพื่อใช้งาน</span><strong>{context.application.name}</strong><small>{context.application.origin}</small><small>ข้อมูลที่ส่งให้ Service หลังยืนยันตัวตน: รหัสบัญชี อีเมล ชื่อ นามสกุล หน่วยงาน และ Role ของ Service นี้</small></div></div>;
@@ -27,11 +23,13 @@ export function Login({ status, checking, context, onDemo, onRetry }: { status: 
   const href = `/api/auth/google/start${context ? `?${new URLSearchParams({ returnTo: context.returnTo })}` : ''}`;
   return <AuthLayout footer={!context && !status?.configured ? <div className="auth-demo"><button onClick={onDemo}>เปิดโหมดตัวอย่าง <ArrowRight size={14} /></button><p>ทดลองหน้าจอด้วยข้อมูลจำลอง</p></div> : undefined}>
     <ApplicationContext context={context} />
-    <h1>เข้าสู่ระบบ</h1><p className="auth-description">ใช้บัญชี Google ของคุณเพื่อดำเนินการต่อ</p>
+    <div className="auth-hero-icon"><KeyRound size={30} aria-hidden="true" /></div>
+    <p className="auth-eyebrow">ยินดีต้อนรับกลับ</p><h1>เข้าสู่ระบบ</h1><p className="auth-description">ใช้บัญชี Google ของคุณ<br />เพื่อเข้าถึงบริการที่ได้รับสิทธิ์อย่างปลอดภัย</p>
     <p className="auth-legal-note">การดำเนินการต่ออยู่ภายใต้<a href="/terms" target="_blank" rel="noopener noreferrer">ข้อกำหนดการใช้งาน</a> โปรดอ่าน<a href="/privacy" target="_blank" rel="noopener noreferrer">นโยบายความเป็นส่วนตัว</a>ก่อนเข้าสู่ระบบ</p>
     {authError && <div className="inline-error" role="alert">เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบว่าอีเมลได้รับอนุญาต แล้วลองอีกครั้ง</div>}
     {status?.configured ? <a className="auth-google" href={href}><GoogleMark />ดำเนินการต่อด้วย Google<ArrowRight size={17} /></a> : <button className="auth-google" disabled><GoogleMark />ดำเนินการต่อด้วย Google<ArrowRight size={17} /></button>}
     <p className="auth-note"><LockKeyhole size={14} /><span>สำหรับอีเมลที่ได้รับอนุญาต<br />ยืนยันอีกขั้นก่อนเข้าใช้งาน</span></p>
+    <details className="auth-details"><summary>ใช้ข้อมูลอะไรจาก Google บ้าง?</summary><p>เราใช้ชื่อ อีเมล รูปโปรไฟล์ และรหัสบัญชีเพื่อยืนยันตัวตนและตรวจสิทธิ์ การเข้าสู่ระบบไม่ขอสิทธิ์อ่านกล่องจดหมายของคุณ</p></details>
     {!status?.configured && <div className="auth-availability" role="status"><span>{checking ? 'กำลังตรวจสอบการเชื่อมต่อ…' : status ? 'ระบบยังไม่พร้อมให้เข้าสู่ระบบ' : 'ยังเชื่อมต่อเซิร์ฟเวอร์ไม่ได้'}</span><button onClick={onRetry} disabled={checking} aria-label="ตรวจสอบการเชื่อมต่ออีกครั้ง"><RefreshCw size={15} className={checking ? 'spin' : ''} /></button></div>}
     {context && <p className="auth-return-note">เมื่อยืนยันสำเร็จ คุณจะกลับไปยัง {context.application.name}</p>}
   </AuthLayout>;
@@ -46,6 +44,8 @@ export function Mfa({ identity, context, onVerified, onLogout }: { identity: Ide
   const isTotp = identity.mfaMethod === 'totp';
   const [recovery, setRecovery] = useState(false);
   const [reset,setReset]=useState(false);
+  const resetHeading=useRef<HTMLHeadingElement>(null);
+  useEffect(()=>{if(reset)resetHeading.current?.focus();},[reset]);
   const [code, setCode] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [sent, setSent] = useState(Boolean(identity.otp?.reference));
   const [otp,setOtp]=useState<OtpState|undefined>(identity.otp);
   const [deadline,setDeadline]=useState(()=>Date.now()+(identity.otp?.retryAfter??0)*1000);
@@ -54,14 +54,15 @@ export function Mfa({ identity, context, onVerified, onLogout }: { identity: Ide
   const remaining=Math.max(0,Math.ceil((deadline-now)/1000));
   async function send() { setBusy(true); setError(''); try { const next=await api<OtpState>('/auth/otp/send', 'POST', {});setOtp(next);setDeadline(Date.now()+next.retryAfter*1000);setNow(Date.now());setCode('');setSent(true); } catch (e) { setError((e as Error).message); if(e instanceof ApiError&&e.retryAfter){setDeadline(Date.now()+e.retryAfter*1000);setNow(Date.now());} } finally { setBusy(false); } }
   async function verify(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await api(`/auth/${recovery ? 'recovery' : isTotp ? 'totp' : 'otp'}/verify`, 'POST', { code,...(!isTotp&&!recovery?{reference:otp?.reference}:{}) }); await onVerified(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
+  if (reset) return <AuthLayout wide><button className="auth-back" onClick={()=>setReset(false)}><ArrowLeft size={16}/>กลับไปยืนยันตัวตน</button><div className="auth-hero-icon"><LifeBuoy size={28}/></div><h1 tabIndex={-1} ref={resetHeading}>ขอรีเซ็ต MFA</h1><p className="auth-description">ให้ผู้ดูแลช่วยกู้การเข้าถึงบัญชีของคุณ</p><div className="auth-email">{identity.user.email}</div><MfaResetRequest/></AuthLayout>;
   return <AuthLayout><ApplicationContext context={context} /><p className="auth-step">ขั้นตอนที่ 2 จาก 2</p><h1>ยืนยันว่าเป็นคุณ</h1><p className="auth-description">{recovery ? 'กรอก Recovery code ที่ยังไม่เคยใช้' : isTotp ? 'กรอกรหัส 6 หลักจากแอป Authenticator' : 'รับรหัสยืนยัน 6 หลักผ่านอีเมลของคุณ'}</p><div className="auth-email">{identity.user.email}</div>
     {error && <div className="inline-error" role="alert">{error}</div>}
     {!isTotp && <><button className="button secondary full-width" disabled={busy||remaining>0} onClick={send}><Mail size={16} />{remaining>0?`ส่งใหม่ได้ใน ${remaining} วินาที`:sent ? 'ส่งรหัสอีกครั้ง' : 'ส่งรหัสไปยังอีเมล'}</button>{sent && <p className="auth-success" role="status">ส่งรหัสแล้ว กรุณาตรวจสอบกล่องจดหมายและสแปม</p>}</>}
     {!isTotp&&otp?.reference&&<p className="otp-reference">Ref: <strong>{otp.reference}</strong><br/>ใช้รหัสจากอีเมลที่มี Ref ตรงกัน</p>}
     <form onSubmit={verify}>{recovery?<label className="field">{recovery ? 'Recovery code' : 'รหัสยืนยัน'}<input className={recovery ? '' : 'auth-otp'} inputMode={recovery ? 'text' : 'numeric'} autoComplete="one-time-code" pattern={recovery ? undefined : '[0-9]{6}'} maxLength={recovery ? 64 : 6} placeholder={recovery ? 'Recovery code' : '000000'} value={code} onChange={e => setCode(recovery ? e.target.value : e.target.value.replace(/\D/g, ''))} required autoFocus /></label>:<OtpInput value={code} onChange={setCode} autoFocus disabled={busy}/>}<button className="button primary full-width" disabled={busy || (recovery ? !code.trim() : code.length !== 6)||(!isTotp&&!otp?.reference)}>{busy ? 'กำลังตรวจสอบ…' : 'ยืนยันและเข้าสู่ระบบ'}<ArrowRight size={16} /></button></form>
-    <ExtraMfa identity={identity} onVerified={onVerified}/>
+    {identity.user.role==='admin'?<p className="auth-note"><ShieldCheck size={16}/><span>{recovery?'ใช้รหัสกู้คืนเพื่อกลับไปตั้งค่า Authenticator ใหม่ก่อนเปิดสิทธิ์ผู้ดูแล':isTotp?<>ยืนยัน Authenticator ครั้งนี้เพื่อเข้าสู่พื้นที่ผู้ดูแล<br/>การเปิดดูหน้าต่าง ๆ ไม่ต้องยืนยันซ้ำ</>:'หลังยืนยันอีเมล โปรดเปิด Authenticator เพื่อใช้สิทธิ์ผู้ดูแล'}</span></p>:<ExtraMfa identity={identity} onVerified={onVerified}/>}
     {isTotp && <button className="auth-text-button" disabled={busy} onClick={() => { setRecovery(!recovery); setCode(''); setError(''); }}>{recovery ? 'ใช้รหัสจาก Authenticator' : 'ใช้ Recovery code'}</button>}
-    {isTotp&&<><button className="auth-text-button" onClick={()=>setReset(!reset)}>{reset?'ปิดคำขอเปลี่ยน MFA':'ไม่มีเครื่องเดิมและ Recovery code'}</button>{reset&&<MfaResetRequest/>}</>}
+    {isTotp&&<div className="auth-recovery-help"><LifeBuoy size={21}/><div><strong>เข้า MFA ไม่ได้?</strong><p>เครื่องหาย เปลี่ยนเครื่อง หรือไม่มีรหัสกู้คืน</p><button type="button" onClick={()=>setReset(true)} disabled={busy}>ขอรีเซ็ต MFA <ArrowRight size={15}/></button></div></div>}
     <button className="auth-text-button" onClick={() => void onLogout()} disabled={busy}>ใช้บัญชีอื่น</button><p className="auth-note"><LockKeyhole size={13} />ห้ามแชร์รหัสยืนยันให้ผู้อื่น</p>
   </AuthLayout>;
 }

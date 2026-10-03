@@ -58,6 +58,7 @@ export default function App() {
   const [qrCode, setQrCode] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null);
+  const loginAnnouncement = useRef(new URLSearchParams(location.search).get('auth') === 'success');
   const requestId = useRef(0);
   const [reauth,setReauth]=useState(false);
   const reauthWait=useRef<{promise:Promise<void>;resolve:()=>void;reject:(error:Error)=>void}|null>(null);
@@ -70,6 +71,15 @@ export default function App() {
   function finishReauth(success:boolean){const pending=reauthWait.current;reauthWait.current=null;setReauth(false);if(success){pending?.resolve();void onVerified().catch(handleError);}else pending?.reject(new Error('ยกเลิกการยืนยัน ไม่มีการเปลี่ยนแปลงสิทธิ์'));}
 
   const notify = useCallback((message: string, error = false) => setToast({ message, error }), []);
+  useEffect(() => {
+    // A URL flag alone cannot announce success: every required factor must be confirmed by the server.
+    if (!identity || identity.requiresMfa || identity.phoneRequired || demo || !loginAnnouncement.current) return;
+    loginAnnouncement.current = false;
+    notify(identity.mfaMethod === 'recovery' ? 'ยืนยันรหัสกู้คืนสำเร็จ กรุณาตั้งค่า Authenticator ใหม่' : 'เข้าสู่ระบบสำเร็จ ยินดีต้อนรับสู่ CUSA SSO');
+    const url = new URL(location.href);
+    url.searchParams.delete('auth'); url.searchParams.delete('status');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }, [identity, demo, notify]);
   const closeDialog = useCallback(() => { setDialog(null); setModalError(''); }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(null), 5500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 2500); return () => clearTimeout(timer); }, [copied]);
@@ -149,6 +159,7 @@ export default function App() {
     setDialog(null); setIdentity(null); setData(emptyData); setDataReady(false); setDemo(false); setCsrfToken('');
   }
   async function onVerified() {
+    if (identity?.requiresMfa || identity?.phoneRequired) loginAnnouncement.current = true;
     const next = await api<Identity>('/auth/me'); setIdentity(next); setCsrfToken(next.csrfToken);
     if (next.mfaMethod === 'recovery') navigate('security');
     else if (loginContext && !next.phoneRequired) window.location.assign(loginContext.returnTo);
@@ -258,7 +269,7 @@ export default function App() {
   if (returnTo !== null && !loginContext) return <LoginRequest error={loginError} onRetry={() => void checkLoginContext()} />;
   if (!identity) return <><Login context={loginContext} status={status} checking={checking} onDemo={enterDemo} onRetry={() => void checkIdentity()} />{toast && <Toast {...toast} close={() => setToast(null)} />}</>;
   if (identity.requiresMfa) return <><Mfa context={loginContext} identity={identity} onVerified={onVerified} onLogout={logout} />{toast && <Toast {...toast} close={() => setToast(null)} />}</>;
-  if(identity.phoneRequired) return <PhoneGate onVerified={onVerified} onLogout={logout}/>;
+  if(identity.phoneRequired) return <PhoneGate onVerified={onVerified} onLogout={logout} context={loginContext}/>;
   if (loginContext && (identity.mfaMethod !== 'recovery' || accessDenied)) return <ContinueLogin denied={accessDenied} identity={identity} context={loginContext} onLogout={logout} />;
 
   let displayedData = data; let displayedMeta = meta;

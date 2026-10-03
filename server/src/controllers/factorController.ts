@@ -9,7 +9,7 @@ import * as passkey from '../models/passkeyModel.js';
 import * as line from '../models/lineModel.js';
 import * as phone from '../models/phoneModel.js';
 import { firebaseWebConfig,verifyFirebasePhoneToken } from '../services/firebasePhone.js';
-import { validLineSignature,requireLine } from '../services/line.js';
+import { validLineSignature,requireLine,replyLineDecision } from '../services/line.js';
 const record=(req:Request):AuthAudit=>(conn,event,target,metadata)=>audit(req,event,target,metadata,conn);
 const id=z.uuid();
 const responseSchema=z.object({id:z.string().regex(/^[A-Za-z0-9_-]+$/).max(2048),rawId:z.string().max(2048),type:z.literal('public-key'),response:z.record(z.string(),z.unknown()),clientExtensionResults:z.record(z.string(),z.unknown())}).passthrough();
@@ -45,7 +45,14 @@ export async function lineWebhook(req:Request,res:Response){
     if(event.type!=='postback'||event.source.type!=='user'||!/^U[0-9a-f]{32}$/.test(event.source.userId??'')||!event.postback||Math.abs(Date.now()-event.timestamp)>180000)continue;
     const data=new URLSearchParams(event.postback.data),challengeId=data.get('cusa_mfa'),choice=data.get('choice');
     if(!id.safeParse(challengeId).success||!choice||!/^[A-Za-z0-9_-]{43}$/.test(choice))continue;
-    await line.applyLineChoice(challengeId!,event.source.userId!,choice,record(req));
+    const decision=await line.applyLineChoice(challengeId!,event.source.userId!,choice,record(req));
+    // Reply only after the one-time decision and its audit record commit. A delivery
+    // failure must never undo MFA, promote the browser, or replay an old choice.
+    const replyToken=z.string().min(1).max(200).safeParse(event.replyToken);
+    if(decision&&replyToken.success){
+      try{await replyLineDecision(replyToken.data,challengeId!,decision);}
+      catch{console.warn(JSON.stringify({event:'auth.line.reply.failure',reason:'LINE_REPLY_UNAVAILABLE'}));}
+    }
   }
   res.json({ok:true});
 }

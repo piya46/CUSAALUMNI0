@@ -4,22 +4,22 @@
 .entity-picker select { width: 100%; min-width: 0; }
 .picker-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; font-size: 11px; }
 .service-role-list { padding: 0 22px 12px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-.service-role { border: 1px solid #e6ebdf; border-radius: 8px; padding: 14px; display: flex; gap: 8px; justify-content: space-between; }
+.service-role { border: 1px solid #ebe6df; border-radius: 8px; padding: 14px; display: flex; gap: 8px; justify-content: space-between; }
 .service-role > div:first-child { min-width: 0; }
-.service-role strong { display: block; font-size: 12px; color: #4f6940; overflow-wrap: anywhere; }
-.service-role code { font-size: 11px; color: #889c77; overflow-wrap: anywhere; }
-.service-role p { font-size: 11px; color: #8f9f82; margin-top: 5px; overflow-wrap: anywhere; }
+.service-role strong { display: block; font-size: 12px; color: #695940; overflow-wrap: anywhere; }
+.service-role code { font-size: 11px; color: #9c8d77; overflow-wrap: anywhere; }
+.service-role p { font-size: 11px; color: #9f9382; margin-top: 5px; overflow-wrap: anywhere; }
 .service-row-actions { display: flex; align-items: flex-start; }
 .service-member-panel { margin-top: 24px; }
 .service-member-search { margin: 0 22px 16px; max-width: 350px; }
 .service-role-badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.service-notice { margin: 14px 0; color: #557845; font-size: 12px; }
+.service-notice { margin: 14px 0; color: #786445; font-size: 12px; }
 .service-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
-.service-role-checkboxes { margin: 18px 0; border: 1px solid #e2ead9; border-radius: 8px; padding: 12px 16px; max-height: 280px; overflow-y: auto; }
-.service-role-checkboxes legend { color: #6a8358; font-size: 12px; padding: 0 6px; }
+.service-role-checkboxes { margin: 18px 0; border: 1px solid #eae3d9; border-radius: 8px; padding: 12px 16px; max-height: 280px; overflow-y: auto; }
+.service-role-checkboxes legend { color: #837258; font-size: 12px; padding: 0 6px; }
 .service-role-checkboxes label { display: flex; align-items: center; gap: 10px; padding: 7px 0; cursor: pointer; }
-.service-role-checkboxes input { width: 16px; height: 16px; accent-color: #47784b; }
-.service-role-checkboxes strong { display: block; font-size: 12px; color: #657d51; }
-.service-role-checkboxes small { display: block; font-size: 10px; color: #9bab8b; }
+.service-role-checkboxes input { width: 16px; height: 16px; accent-color: #786447; }
+.service-role-checkboxes strong { display: block; font-size: 12px; color: #7d6b51; }
+.service-role-checkboxes small { display: block; font-size: 10px; color: #ab9e8b; }
 .service-selected-user { margin-bottom: 18px; font-size: 13px; overflow-wrap: anywhere; }
 @media(max-width: 600px) { .service-picker-panel .entity-picker,.service-role-list { grid-template-columns: 1fr; } .service-member-panel .panel-heading { flex-wrap: wrap; } }

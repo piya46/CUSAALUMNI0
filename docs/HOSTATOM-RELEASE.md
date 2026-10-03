@@ -156,3 +156,11 @@ Passkeys เปิดได้โดย `PASSKEY_ENABLED=true`; LINE/Firebase �
 เลือก `DB_SOCKET_PATH` เฉพาะเมื่อ HostAtom แจ้ง path ที่ Node เข้าถึงได้ ไม่เดา path ของเครื่องพัฒนา และไม่เปลี่ยนจาก localhost TCP เพียงเพราะคาดว่าจะเร็วขึ้น ทั้งสองแบบยังใช้ pool/UTC เหมือนกัน
 
 เปิด Monitoring เพิ่มได้ด้วย `METRICS_TOKEN`; ดู [Delta Review](DELTA-REVIEW.md) ค่า metrics เป็นราย process ไม่ใช่ค่ารวม Host/Passenger
+
+## อัปเดตหน้า Login และ LINE Flex (ตุลาคม 2026)
+
+รอบนี้ไม่มี migration ใหม่หรือค่า `.env` เพิ่ม ใช้ release ZIP ล่าสุดแทนไฟล์แอป แล้วกด **Restart App** ใน Plesk โดยเก็บ `.env` และ `var` บน Host เดิมไว้ ไม่ต้องเปิด `/install` อีก หาก deploy ผ่าน Git ให้รัน `build` หลังอัปเดตแล้ว Restart App
+
+ตรวจหน้า `/` ว่าเป็น Login เหลืองส้ม, กรอกเบอร์แบบ `0812345678`, ทดลอง MFA ของบัญชี Admin ด้วย Authenticator ครั้งเดียว และทดสอบ LINE ด้วยบัญชีทดสอบที่ผูกจริง: เลือกเลข → การ์ดผลใหม่พร้อม Ref → browser เข้าสู่ระบบ ปุ่มในข้อความเก่าใช้ยืนยันซ้ำไม่ได้ ตัวข้อความเก่ายังอยู่ในประวัติ LINE ตามข้อจำกัด Messaging API
+
+หากใช้โลโก้ wordmark ของโปรเจกต์ใน Google OAuth ให้ใช้ `web/public/cusa-sso.png` ที่อัปเดตสีตรงกับ SVG บนเว็บ ตรวจผลการเปลี่ยน Branding ใน Google Console ตาม [คู่มือ Branding](GOOGLE-BRANDING.md) การ deploy เว็บไม่เปลี่ยนการตั้งค่า Google/LINE/Firebase Console อัตโนมัติ

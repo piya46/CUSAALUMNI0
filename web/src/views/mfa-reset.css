@@ -1,8 +1,21 @@
-.mfa-reset-request { text-align:left; padding-top:24px; border-top:1px solid #e1e8dc; margin-top:20px; }
+.mfa-reset-request { text-align:left; padding-top:24px; border-top:1px solid #e8e3dc; margin-top:20px; }
 .mfa-reset-request h2 { font-size:18px; }
-.mfa-reset-request p { color:#6a7d64; font-size:12px; line-height:1.9; margin:12px 0; }
-.evidence-notice { padding:16px; border-radius:8px; background:#f5f7ef; margin:18px 0; font-size:12px; line-height:1.9; color:#607258; }
+.mfa-reset-request p { color:#7d7364; font-size:12px; line-height:1.9; margin:12px 0; }
+.evidence-notice { padding:16px; border-radius:8px; background:#f7f4ef; margin:18px 0; font-size:12px; line-height:1.9; color:#726858; }
 .evidence-notice a { text-decoration:underline; }
-.reset-status { background:#edf4e9; padding:14px; border-radius:8px; margin:16px 0; font-size:12px; color:#45643a; }
+.reset-status { background:#f4f0e9; padding:14px; border-radius:8px; margin:16px 0; font-size:12px; color:#64533a; }
 .reset-status small { display:block; margin:8px 0; }
-.evidence-preview { width:100%; max-height:55vh; object-fit:contain; background:#e9ede6; border-radius:8px; }
+.evidence-preview { width:100%; max-height:55vh; object-fit:contain; background:#edeae6; border-radius:8px; }
+.auth-main-wide .mfa-reset-request { border:0; padding-top:0; margin-top:0; }
+.mfa-reset-request p { font-size:13px; color:#79644f; }
+.mfa-reset-request .evidence-notice { border:1px solid #efdfc5; background:#fff9eb; border-radius:13px; }
+.evidence-upload { display:grid; justify-items:center; text-align:center; gap:8px; padding:24px 16px; border:2px dashed #dcbf93; border-radius:14px; background:#fffcf6; color:#8a5829; cursor:pointer; }
+.evidence-upload:hover,.evidence-upload:focus-within { border-color:#a95e1a; background:#fff7e7; }
+.evidence-upload strong { font-size:14px; max-width:100%; overflow-wrap:anywhere; }
+.evidence-upload span { font-size:12px; color:#836c51; }
+.evidence-upload input { max-width:100%; font-size:12px; margin-top:8px; }
+.evidence-upload input::file-selector-button { padding:8px 12px; color:#6e411d; background:#ffe6b5; border:0; border-radius:8px; cursor:pointer; margin-right:8px; }
+.evidence-security { display:flex; align-items:center; justify-content:center; gap:7px; }
+.reset-status { border:1px solid #efdfc5; border-radius:13px; background:#fff7e7; color:#704d2b; }
+
+.mfa-reset-request .checkbox-row { font-size:13px; line-height:1.85; color:#79644f; }

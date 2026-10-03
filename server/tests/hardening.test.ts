@@ -23,6 +23,7 @@ test('admin requires TOTP and recent MFA for writes, while allowing older TOTP r
   assert.throws(()=>requireAdmin(req,{} as any,()=>{}),{code:'ADMIN_MFA_REQUIRED'});
   req.identity.mfaMethod='recovery';assert.throws(()=>requireAdmin(req,{} as any,()=>{}),{code:'ADMIN_MFA_REQUIRED'});
   req.identity.mfaMethod='totp';requireAdmin(req,{} as any,()=>{});
+  requireRecentAdminMfa(req,{} as any,()=>{}); // The login's fresh TOTP already authorizes writes.
   req.identity.authenticatedAt=new Date(Date.now()-301000);assert.throws(()=>requireRecentAdminMfa(req,{} as any,()=>{}),{code:'MFA_REAUTH_REQUIRED'});
   req.method='GET';requireRecentAdminMfa(req,{} as any,()=>{});
 });

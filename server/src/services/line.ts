@@ -2,6 +2,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { config } from '../config.js';
 import { safeEqual } from './crypto.js';
 import { HttpError } from '../middleware/security.js';
+import { matchingMessage, matchingResultMessage, type LineDecision } from './lineMessages.js';
 export function requireLine(){if(!config.lineMfaEnabled)throw new HttpError(404,'LINE MFA ยังไม่เปิดใช้งาน','NOT_FOUND');}
 async function lineFetch(url:string,body:URLSearchParams|object,bearer=false){
   const response=await fetch(url,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:{'Content-Type':bearer?'application/json':'application/x-www-form-urlencoded',...(bearer?{Authorization:`Bearer ${config.lineChannelAccessToken}`}:{})},body:bearer?JSON.stringify(body):String(body)});
@@ -18,11 +19,20 @@ export async function exchangeLine(code:string,nonce:string,verifier:string){
   if(claims.iss!=='https://access.line.me'||claims.aud!==config.lineLoginChannelId||claims.nonce!==nonce||claims.exp<=Date.now()/1000||!/^U[0-9a-f]{32}$/.test(claims.sub))throw new Error('LINE_IDENTITY_REJECTED');
   return claims.sub as string;
 }
-export async function sendLineMatching(subject:string,id:string,choices:{label:string;value:string}[]){
+export async function sendLineMatching(subject:string,id:string,choices:{label:string;value:string}[],applicationName?:string|null){
   const response=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:{Authorization:`Bearer ${config.lineChannelAccessToken}`,'Content-Type':'application/json','X-Line-Retry-Key':id},
-    body:JSON.stringify({to:subject,messages:[{type:'template',altText:'CUSA SSO: ยืนยันเข้าสู่ระบบ เลือกเลขให้ตรงกับหน้าจอของคุณ หมดอายุใน 3 นาที',template:{type:'buttons',title:'CUSA SSO · ยืนยันเข้าสู่ระบบ',text:'เลือกเลขจากหน้าจอ CUSA SSO ถ้าไม่ได้เริ่ม ให้ปฏิเสธ',actions:choices.map(choice=>({type:'postback',label:choice.label,data:`cusa_mfa=${id}&choice=${choice.value}`}))}}]})});
+    body:JSON.stringify({to:subject,messages:[matchingMessage(id,choices,applicationName)]})});
   if(!response.ok)throw new Error('LINE_DELIVERY_UNAVAILABLE');
 }
 export function validLineSignature(raw:Buffer,signature:string|undefined){
   return Boolean(config.lineMfaEnabled&&signature&&/^[A-Za-z0-9+/]{43}=$/.test(signature)&&safeEqual(signature,createHmac('sha256',config.lineMessagingChannelSecret).update(raw).digest('base64')));
+}
+
+export async function replyLineDecision(replyToken:string,id:string,decision:LineDecision){
+  const response=await fetch('https://api.line.me/v2/bot/message/reply',{
+    method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),
+    headers:{Authorization:`Bearer ${config.lineChannelAccessToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({replyToken,messages:[matchingResultMessage(id,decision)]}),
+  });
+  if(!response.ok)throw new Error('LINE_REPLY_UNAVAILABLE');
 }

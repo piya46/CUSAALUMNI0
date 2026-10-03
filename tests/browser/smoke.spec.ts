@@ -4,10 +4,10 @@ test('login, demo navigation, allowlist mutation and reload isolation',async({pa
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/login');
   await expect(page.getByRole('heading',{name:'เข้าสู่ระบบ'})).toBeVisible();
-  await page.screenshot({path:'test-results/login-desktop.png',fullPage:true});
+  await page.screenshot({path:'test-results/login-desktop.png',fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'เปิดโหมดตัวอย่าง'}).click();
   await expect(page.locator('.demo-banner')).toBeVisible();
-  await page.screenshot({path:'test-results/dashboard-desktop.png',fullPage:true});
+  await page.screenshot({path:'test-results/dashboard-desktop.png',fullPage:true,animations:'disabled'});
   const nav=page.getByRole('navigation',{name:'เมนูหลัก'});
   const navButtons=nav.getByRole('button');
   const count=await navButtons.count();
@@ -27,7 +27,7 @@ test('mobile layout, navigation drawer and security page',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.goto('/login');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBeTruthy();
   await page.getByRole('button',{name:'เปิดโหมดตัวอย่าง'}).click();
-  await page.screenshot({path:'test-results/dashboard-mobile.png',fullPage:true});
+  await page.screenshot({path:'test-results/dashboard-mobile.png',fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'เปิดเมนู',exact:true}).click();
   await expect(page.locator('.sidebar')).toHaveClass(/open/);
   await page.getByRole('navigation',{name:'เมนูหลัก'}).getByRole('button',{name:'ความปลอดภัย',exact:true}).click();
@@ -85,10 +85,10 @@ test('central login shows verified service, keeps target, and blocks unsafe logi
   await expect(page.getByText('Untrusted application name')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'เปิดโหมดตัวอย่าง' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'ดำเนินการต่อด้วย Google' })).toHaveAttribute('href', `/api/auth/google/start?${new URLSearchParams({ returnTo })}`);
-  await page.screenshot({ path: 'test-results/service-login-desktop.png', fullPage: true });
+  await page.screenshot({ path: 'test-results/service-login-desktop.png', fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
-  await page.screenshot({ path: 'test-results/service-login-mobile.png', fullPage: true });
+  await page.screenshot({ path: 'test-results/service-login-mobile.png', fullPage: true, animations: 'disabled' });
   await page.goto('/login?returnTo=https%3A%2F%2Fattacker.example');
   await expect(page.getByRole('heading', { name: 'ไม่สามารถเข้าสู่ระบบได้' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'ดำเนินการต่อด้วย Google' })).toHaveCount(0);
@@ -143,7 +143,7 @@ test('user profile and custom service roles support multiple assignments without
   await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
   let row = page.getByRole('row').filter({ hasText: 'kittipong@example.com' });
   await expect(row).toContainText('ฝ่ายการเงิน'); await expect(row).toContainText('approver'); await expect(row).toContainText('viewer');
-  await page.screenshot({ path: 'test-results/service-access-desktop.png', fullPage: true });
+  await page.screenshot({ path: 'test-results/service-access-desktop.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('combobox', { name: 'Service', exact: true }).selectOption('app-2');
   await expect(page.getByRole('heading', { name: 'Role ของ People & HR' })).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: 'kittipong@example.com' })).toHaveCount(0);
