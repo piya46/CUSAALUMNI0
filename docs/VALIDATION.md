@@ -1,5 +1,16 @@
 # Validation record
 
+## Service profile disclosure and explicit consent — 2026-10-04
+
+- Added migration 008, service-level allowed claim scopes and purpose/version, session-bound one-use consent, selective profile/email/phone/LINE/authentication disclosure, a server-to-server phone equality endpoint and owner revocation. Old code/tokens without consent fail closed. No `.env`, dependency or secret change; no HostAtom deployment or migration performed.
+- Server/React typecheck and production build passed. Full server suite: **84 passed, 45 skipped, 0 failed**; live-provider and other opt-in infrastructure suites are not claimed as validated by that run.
+- All migrations 001–008 applied to a newly created disposable local MariaDB schema over a private Unix socket. Focused SSO, consent, service-role and session integration run: **17 passed, 0 failed**. Additional consent/HTTP/model verification: **33 passed**. These runs overlap and must not be added together as distinct test counts.
+- Covers no automatic code before consent, mandatory full MFA/phone gate, exact Origin/CSRF, callback/state/PKCE binding, user/session/application isolation, scope overreach/duplicates, approval replay/concurrency, audit rollback, selective omission in both identity APIs, server-verified encrypted phone/LINE claims, assurance snapshots, Thai/E.164 matching, cross-service rejection, missing-phone tri-state, user revocation and policy-version invalidation. Recovery evidence/provider credentials are never claims.
+- Full browser run: **46 passed, 1 failed** due to the new admin fixture omitting numeric overview statistics; corrected fixture and reran the six consent tests: **6 passed**. **47 distinct browser scenarios passed across these runs**, including admin sharing controls, own consent revocation, MFA regressions, selective opt-in, denial/expired requests, mobile overflow and API documentation. API/provider responses are mocked; no SMS, LINE or Google requests are sent by these browser tests.
+- Final consent retention/admin-policy and scheduler checks: **18 passed**, including indexed expiry cleanup, preservation of live grants, rejection of LINE/stale admin sessions, fresh strong MFA, and atomic policy/audit rollback.
+- Consent desktop/mobile screenshots inspected. A local release allowlist test passed. Remaining operator checks: install migration 008 and runtime grants, restart, verify genuine provider login and downstream BFF acceptance/denial/missing-scope handling; benchmark real host capacity and monitor cleanup scheduling. No legal certification or formal AAL/KYC claim is implied.
+
+
 ## Categorized MFA choices and deferred Admin access — 2026-10-04
 
 - The MFA page after Google now groups enrolled, enabled methods into recommended (TOTP/Passkey), other eligible methods (LINE or Email OTP), and account recovery. Selecting a method switches the input panel without automatically sending a code, sending LINE or invoking WebAuthn. The first sign-in step remains Google/allowlist-bound.

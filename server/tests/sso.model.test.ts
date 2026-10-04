@@ -34,7 +34,7 @@ function fakeDatabase() {
       if(sql.includes('SELECT identity.*')) {
         assert.equal(tx,undefined);assert.doesNotMatch(sql,/FOR UPDATE/);
         return (state.keyLive?[{keyScopes:JSON.stringify(state.scopes),keyExpiresAt:state.keyExpiresAt,
-          ...(state.live&&state.applicationId===applicationId?{given_name:'Test',family_name:'User',department:'IT',roles:'["viewer"]',sub:'user-1',email:'user@example.com',name:'User',aud:applicationId,exp:state.tokenExpiresAt,scope:'identity:read',redirectUri}:{sub:null})}]:[]) as T[];
+          ...(state.live&&state.applicationId===applicationId?{given_name:'Test',family_name:'User',department:'IT',roles:'["viewer"]',sub:'user-1',email:'user@example.com',name:'User',aud:applicationId,exp:state.tokenExpiresAt,scope:'identity:read profile email',allowedScope:'identity:read profile email',redirectUri}:{sub:null})}]:[]) as T[];
       }
       if (sql.includes('FROM api_keys k')) {
         assert.equal(tx, connection);
@@ -46,12 +46,12 @@ function fakeDatabase() {
         assert.equal(tx, connection);
         assert.match(sql, /FOR UPDATE/);
         return (!state.consumed && state.codeLive && state.live && params[0] === codeHash && params[1] === applicationId
-          ? [{ userId: 'user-1', sessionId: 'session-1', redirectUri, challenge: pkceChallenge(verifier) }] : []) as T[];
+          ? [{ userId: 'user-1', sessionId: 'session-1', redirectUri, challenge: pkceChallenge(verifier), consentId:'consent-1',scope:'identity:read profile email',allowedScope:'identity:read profile email' }] : []) as T[];
       }
       if (sql.includes('FROM access_tokens t')) {
         return (state.live && (!params[1] || params[1] === applicationId)
           ? [{ given_name: 'Test', family_name: 'User', department: 'IT', roles: '["viewer"]', sub: 'user-1', email: 'user@example.com', name: 'User', aud: applicationId,
-            exp: state.tokenExpiresAt, scope: 'identity:read', redirectUri }] : []) as T[];
+            exp: state.tokenExpiresAt, scope: 'identity:read profile email', allowedScope: 'identity:read profile email', redirectUri }] : []) as T[];
       }
       if (sql.includes('FROM applications a')) return (state.live ? [{ id: applicationId }] : []) as T[];
       throw new Error(`Unexpected query: ${sql}`);
@@ -74,6 +74,7 @@ function fakeDatabase() {
   return { db, state, model: createSsoModel(db) };
 }
 
+const randomState=()=> 's'.repeat(43);
 const exchange = { apiKeyHash: hashToken('server-key'), codeHash, redirectUri, verifier };
 const isError = (code: string) => (error: unknown) => error instanceof SsoModelError && error.code === code;
 
@@ -160,8 +161,8 @@ test('introspection binds application and both identity endpoints observe revoca
   state.live = false;
   assert.deepEqual(await model.introspectToken('key', 'token'), { active: false });
   assert.equal(await model.getUserInfo('token'), null);
-  await assert.rejects(model.issueAuthorizationCode({ applicationId, userId: 'user-1', sessionId: 'session-1',
-    redirectUri, challenge: pkceChallenge(verifier) }), isError('access_denied'));
+  await assert.rejects(model.beginAuthorization({state:randomState(),scope:'identity:read profile email', applicationId, userId: 'user-1', sessionId: 'session-1',
+    redirectUri, challenge: pkceChallenge(verifier), consentId:'consent-1',scope:'identity:read profile email',allowedScope:'identity:read profile email' }), isError('access_denied'));
 });
 
 test('introspection effective expiry is bounded by the authenticating API key and token/session result', async () => {

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import * as model from '../models/adminModel.js';
 import { audit } from '../middleware/security.js';
 import { idSchema, paginationSchema, auditFilterSchema, allowlistSchema, applicationSchema, apiKeySchema } from './adminValidation.js';
+import { sharingPolicySchema } from '../services/claimScopes.js';
 
 function actor(req: Request) { return { userId: req.identity!.userId, email: req.identity!.email,sessionId:req.identity!.sessionId }; }
 function auditWriter(req: Request): model.AuditWriter {
@@ -38,6 +39,11 @@ export async function createApplication(req: Request, res: Response) {
 export async function deleteApplication(req: Request, res: Response) {
   await model.revokeApplication(actor(req), idSchema.parse(req.params.id), auditWriter(req));
   res.json({ ok: true });
+}
+export async function sharingPolicy(req:Request,res:Response){res.json(await model.getSharingPolicy(idSchema.parse(req.params.id)));}
+export async function saveSharingPolicy(req:Request,res:Response){
+  await model.updateSharingPolicy(actor(req),idSchema.parse(req.params.id),sharingPolicySchema.parse(req.body),auditWriter(req));
+  res.json({ok:true});
 }
 export async function createApiKey(req: Request, res: Response) {
   const result = await model.addApiKey(actor(req), apiKeySchema.parse(req.body), auditWriter(req));

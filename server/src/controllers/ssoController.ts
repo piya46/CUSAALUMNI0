@@ -6,6 +6,8 @@ import { hashToken } from '../services/crypto.js';
 import { ssoModel, SsoModelError, type SsoModel } from '../models/ssoModel.js';
 import { config } from '../config.js';
 import { IntrospectionCache } from '../services/introspectionCache.js';
+import { claimScopeNames, normalizePhone, scopesWithin } from '../services/claimScopes.js';
+import { sharedRateLimit } from '../services/rateLimitStore.js';
 
 const opaqueToken = /^[A-Za-z0-9_-]{43}$/;
 const exchangeSchema = z.object({
@@ -13,6 +15,9 @@ const exchangeSchema = z.object({
   redirect_uri: z.string().min(1).max(2048), code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
 }).strict();
 const introspectionSchema = z.object({ token: z.string().min(1).max(512) }).strict();
+const consentRequestSchema = z.object({request:z.string().regex(opaqueToken)}).strict();
+const consentDecisionSchema = consentRequestSchema.extend({approved:z.boolean(),scopes:z.array(z.enum(claimScopeNames)).max(7)}).strict();
+const phoneMatchSchema = z.object({token:z.string().regex(opaqueToken),phone_number:z.string().max(40).refine(value=>normalizePhone(value)!==null)}).strict();
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const parsed = schema.safeParse(value);
   if (!parsed.success) throw new HttpError(400, 'Invalid request parameters', 'invalid_request');
@@ -51,7 +56,8 @@ function action(handler: (req: Request, res: Response) => Promise<void>): Reques
           : ['access_denied', 'insufficient_scope'].includes(error.code) ? 403 : 400;
         const message = error.code === 'invalid_client' ? 'Invalid or expired API key'
           : error.code === 'insufficient_scope' ? 'API key does not permit this operation'
-            : error.code === 'access_denied' ? 'Account or session is no longer authorized'
+            : error.code === 'invalid_scope' ? 'Requested data is not permitted by the service policy or consent'
+            : error.code === 'access_denied' ? 'Account, session or consent request is no longer authorized; start again from the service'
               : 'Authorization code is invalid, expired, used, or does not match this request';
         throw new HttpError(status, message, error.code);
       }
@@ -68,6 +74,7 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
       throw new HttpError(400, 'Callback does not exactly match an active application', 'invalid_client');
     }
     const destination = callbackUrl(parameters.redirect_uri);
+    if(!scopesWithin(parameters.scope,app.allowedScope))throw new SsoModelError('invalid_scope');
     const returnTo = `/api/sso/authorize?${new URLSearchParams(parameters)}`;
     return { parameters, app, destination, returnTo };
   }
@@ -79,15 +86,15 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
     }),
     authorize: action(async (req, res) => {
       // Never redirect before validating the exact registered callback, even for login/errors.
-      const { parameters, destination, returnTo } = await authorizationContext(req.query);
+      const { parameters, returnTo } = await authorizationContext(req.query);
       const { client_id: applicationId, redirect_uri: redirectUri, state, code_challenge: challenge } = parameters;
       if (!req.identity || req.identity.kind !== 'full' || req.identity.phoneRequired) {
         res.redirect(303, `/login?${new URLSearchParams({ returnTo })}`);
         return;
       }
-      let code: string;
+      let request: string;
       try {
-        code = await model.issueAuthorizationCode({ applicationId, redirectUri, challenge,
+        request = await model.beginAuthorization({ applicationId, redirectUri, challenge, state, scope:parameters.scope,
           sessionId: req.identity.sessionId, userId: req.identity.userId },(conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn));
       } catch (error) {
         if (!(error instanceof SsoModelError) || error.code !== 'access_denied') throw error;
@@ -95,9 +102,31 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
         res.redirect(303, `/login?${new URLSearchParams({ returnTo, auth: 'access_denied' })}`);
         return;
       }
-      destination.searchParams.set('code', code);
-      destination.searchParams.set('state', state);
-      res.redirect(303, destination.toString());
+      res.redirect(303, `/consent?${new URLSearchParams({request})}`);
+    }),
+
+    consentContext: action(async(req,res)=>{
+      const {request}=parse(consentRequestSchema,req.query);
+      res.json(await model.consentContext(request,req.identity!.sessionId,req.identity!.userId));
+    }),
+    consentDecision: action(async(req,res)=>{
+      const {request,approved,scopes}=parse(consentDecisionSchema,req.body);
+      res.json(await model.decideConsent(request,req.identity!.sessionId,req.identity!.userId,approved,scopes,
+        (conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn)));
+    }),
+    consents: action(async(req,res)=>{res.json({consents:await model.listConsents(req.identity!.userId)});}),
+    revokeConsent: action(async(req,res)=>{
+      const id=parse(z.uuid(),req.params.id);
+      await model.revokeConsent(id,req.identity!.userId,(conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn));
+      res.json({ok:true});
+    }),
+    matchPhone: action(async(req,res)=>{
+      const key=apiKey(req),{token,phone_number}=parse(phoneMatchSchema,req.body),tokenHash=hashToken(token);
+      let allowed:boolean;
+      try{allowed=await sharedRateLimit(hashToken(`phone-match:${req.service!.applicationId}:${tokenHash}`),5,60);}
+      catch{throw new HttpError(503,'Rate limit store unavailable','RATE_LIMIT_UNAVAILABLE');}
+      if(!allowed){res.set('Retry-After','60');throw new HttpError(429,'Phone comparison quota exceeded','RATE_LIMITED');}
+      res.json(await model.matchPhone(key,tokenHash,phone_number));
     }),
 
     token: action(async (req, res) => {
@@ -107,7 +136,7 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
       }
       const { code, redirect_uri: redirectUri, code_verifier: verifier } = parse(exchangeSchema, req.body);
       const token = await model.exchangeAuthorizationCode({ apiKeyHash, codeHash: hashToken(code), redirectUri, verifier },(conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn));
-      res.json({ access_token: token.accessToken, token_type: 'Bearer', expires_in: token.expiresIn, scope: 'identity:read' });
+      res.json({ access_token: token.accessToken, token_type: 'Bearer', expires_in: token.expiresIn, scope: token.scope });
     }),
 
     introspect: action(async (req, res) => {

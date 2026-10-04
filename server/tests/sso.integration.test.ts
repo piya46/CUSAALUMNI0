@@ -1,3 +1,4 @@
+import { consentedCode } from './consent-fixture.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
@@ -56,8 +57,8 @@ test('MariaDB SSO enforces PKCE, one-use codes, application binding and live rev
     }
 
     await context.test('pending MFA cannot obtain codes; PKCE, exact callback and application binding are enforced', async () => {
-      await assert.rejects(model.issueAuthorizationCode({ ...request, sessionId: pendingId }), errorCode('access_denied'));
-      const code = await model.issueAuthorizationCode(request);
+      await assert.rejects(consentedCode(model,{ ...request, sessionId: pendingId }), errorCode('access_denied'));
+      const code = await consentedCode(model,request);
       const input = { apiKeyHash, codeHash: hashToken(code), redirectUri, verifier };
       await assert.rejects(model.exchangeAuthorizationCode({ ...input, verifier: randomToken() }), errorCode('invalid_grant'));
       await assert.rejects(model.exchangeAuthorizationCode({ ...input, redirectUri: redirectUri.toUpperCase() }), errorCode('invalid_grant'));
@@ -70,7 +71,7 @@ test('MariaDB SSO enforces PKCE, one-use codes, application binding and live rev
     });
 
     await context.test('concurrent valid exchanges produce exactly one token and reject replay', async () => {
-      const code = await model.issueAuthorizationCode(request);
+      const code = await consentedCode(model,request);
       const input = { apiKeyHash, codeHash: hashToken(code), redirectUri, verifier };
       const attempts = await Promise.allSettled([
         model.exchangeAuthorizationCode(input), model.exchangeAuthorizationCode(input),

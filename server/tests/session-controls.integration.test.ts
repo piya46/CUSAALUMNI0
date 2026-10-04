@@ -1,3 +1,4 @@
+import { consentedCode } from './consent-fixture.js';
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +27,7 @@ async function service(u:Awaited<ReturnType<typeof user>>){
   await execute('INSERT INTO application_memberships(application_id,user_id) VALUES (?,?)',[id,u.userId]);
   await execute('INSERT INTO application_member_roles(application_id,user_id,role_id) VALUES (?,?,?)',[id,u.userId,role]);
   await execute('INSERT INTO api_keys(id,application_id,name,prefix,key_hash,scopes,expires_at) VALUES (?,?,?,?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 DAY))',[randomUUID(),id,'Test','test',hashToken(key),JSON.stringify(['identity:read','token:introspect','token:revoke'])]);
-  const code=await ssoModel.issueAuthorizationCode({applicationId:id,userId:u.userId,sessionId:u.sessionId,redirectUri,challenge:pkceChallenge(verifier)});
+  const code=await consentedCode(ssoModel,{applicationId:id,userId:u.userId,sessionId:u.sessionId,redirectUri,challenge:pkceChallenge(verifier)});
   const token=await ssoModel.exchangeAuthorizationCode({apiKeyHash:hashToken(key),codeHash:hashToken(code),redirectUri,verifier});
   return {id,key,...token};
 }

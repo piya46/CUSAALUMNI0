@@ -89,3 +89,8 @@ Migration 006 adds passkeys, LINE bindings, verified phone bindings and one-use 
 User account creation snapshots `FIREBASE_PHONE_REQUIRED` into `users.phone_required`; existing users are not silently enrolled in that requirement. Session authorization and all three SSO credential stages reject required-but-unverified phone status. No public auto-registration, JWT/OIDC provider, MFA bypass code or logout webhook is advertised as implemented.
 
 Admin `DELETE /api/admin/users/:id/sessions` revokes credentials atomically with audit and retains the account/membership/MFA. Optional authenticated Prometheus `/api/metrics` reports per-process aggregates only. Static immutable caching is restricted to content-hashed Vite assets. `DB_SOCKET_PATH` selects an explicit Unix socket with no TCP fallback.
+
+
+## Service disclosure and consent (008)
+
+Every authorization requires a one-use, session-bound consent decision before code issuance. Service policy caps requested claim scopes; the selected subset is frozen on the grant/code/token and enforced by both userinfo and introspection. Profile, verified phone, LINE UID and authentication evidence are separate opt-in scopes. Phone equality has its own server-to-server scope, audience binding, five checks/token/service/minute and tri-state response; it never returns a phone number. No evidence, secrets, provider tokens or platform admin role is disclosed. Policy revisions and owner revocation invalidate old grants; existing introspection cache delay is at most five seconds. See [SSO integration](SSO-INTEGRATION.md) for field semantics, first-party CSRF endpoints, versioning and retention.

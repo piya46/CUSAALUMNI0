@@ -30,7 +30,7 @@ Role ของ Service ไม่ให้สิทธิ์ Admin ของ CUSA
 
 ## ข้อมูลสำหรับ Service ปลายทาง
 
-ทั้ง introspection และ userinfo คืน `given_name`, `family_name`, `department`, `roles` (array ของรหัส) และ `aud` ของ Service นั้นเท่านั้น ไม่คืน platform admin role และไม่คืนสมาชิกของ Service อื่น
+ทั้ง introspection และ userinfo คืน `sub`, `roles`, `aud`, `scope` ของ Service นั้นเสมอ ส่วน `given_name`, `family_name`, `picture`, `department` คืนเมื่ออนุมัติ `profile` และอีเมลเมื่ออนุมัติ `email` ตาม [Consent contract](SSO-INTEGRATION.md) ไม่คืน platform admin role และไม่คืนสมาชิกของ Service อื่น
 
 ```json
 {
@@ -43,7 +43,7 @@ Role ของ Service ไม่ให้สิทธิ์ Admin ของ CUSA
   "department": "ฝ่ายการเงิน",
   "roles": ["viewer", "approver"],
   "aud": "application-uuid",
-  "scope": "identity:read",
+  "scope": "identity:read profile email",
   "exp": 2000000000
 }
 ```

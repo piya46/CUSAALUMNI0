@@ -19,7 +19,7 @@ app.get('/auth/login', async (req, res) => {
   const query = new URLSearchParams({ client_id: APP_ID,
     redirect_uri: CALLBACK, response_type: 'code', state,
     code_challenge: hash(verifier).toString('base64url'),
-    code_challenge_method: 'S256' });
+    code_challenge_method: 'S256', scope: 'identity:read profile email' });
   res.set('Cache-Control', 'no-store').redirect(303,
     SSO + '/api/sso/authorize?' + query);
 });
@@ -36,15 +36,17 @@ async function callSso(path, body) {
 
 app.get('/auth/callback', async (req, res) => {
   res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
-  const { code, state } = req.query;
+  const { code, state, error } = req.query;
   const flow = req.session.sso;
-  if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code)
-    || typeof state !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(state)
+  if (typeof state !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(state)
     || !flow || Date.now() - flow.createdAt > 10 * 60 * 1000
     || !timingSafeEqual(hash(state), Buffer.from(flow.stateHash, 'hex')))
     return res.sendStatus(400);
   delete req.session.sso;
   await save(req);
+  if (error === 'access_denied') return res.redirect(303, '/login?reason=consent_denied');
+  if (error !== undefined || typeof code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code))
+    return res.sendStatus(400);
   const token = await callSso('token', { grant_type: 'authorization_code',
     code, redirect_uri: CALLBACK, code_verifier: flow.verifier });
   const identity = await callSso('introspect', { token: token.access_token });

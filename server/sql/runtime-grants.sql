@@ -36,3 +36,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`passkeys` TO 'cusa_ru
 GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`line_identities` TO 'cusa_runtime'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`phone_identities` TO 'cusa_runtime'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`factor_challenges` TO 'cusa_runtime'@'localhost';
+
+-- Service consent (migration 008).
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`sso_consents` TO 'cusa_runtime'@'localhost';

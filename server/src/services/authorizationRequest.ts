@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { claimScopeString, defaultClaimScope } from './claimScopes.js';
 
 const opaque = /^[A-Za-z0-9_-]{43}$/;
 export const authorizationSchema = z.object({
@@ -6,6 +7,7 @@ export const authorizationSchema = z.object({
   response_type: z.literal('code'), state: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
   code_challenge_method: z.literal('S256'), code_challenge: z.string().regex(opaque)
     .refine(value => Buffer.from(value, 'base64url').toString('base64url') === value),
+  scope: claimScopeString.default(defaultClaimScope),
 }).strict();
 export function parseAuthorizationReturnTo(value: unknown) {
   const path = z.string().max(3000).refine(s => s.startsWith('/api/sso/authorize?') && !/[\r\n]/.test(s)).parse(value);

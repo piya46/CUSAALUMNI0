@@ -1,6 +1,10 @@
 # อัปโหลด CUSA SSO รุ่นนี้บน HostAtom / Plesk
 
-รุ่น 4 ตุลาคม 2026 ต้อง migrate ถึง `007_waiting_room.sql` ก่อน Restart แม้ยังไม่เปิดคิว Migration เพิ่ม columns ใน `applications` ไม่มีตารางหรือ grants ใหม่ถ้า runtime มีสิทธิ์ตารางนี้ครบแล้ว อ่าน [คู่มือคิว](WAITING-ROOM.md) ส่วน scheduler ใช้ `BACKGROUND_JOBS_ENABLED=true` ไม่ต้องตั้ง Plesk Cron
+รุ่นนี้ต้อง migrate ถึง `008_service_consent.sql` ก่อน Restart: เพิ่ม policy ใน `applications`, ตาราง `sso_consents` และ `consent_id` ใน code/token ให้สิทธิ์ SELECT/INSERT/UPDATE/DELETE ตาราง `sso_consents` แก่ runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) ไม่เพิ่มค่า .env
+
+Code/token เก่าที่ไม่มี Consent จะใช้ไม่ได้หลังอัปเดต ให้ระบบลูกเริ่ม login ใหม่เพื่อเลือกข้อมูลที่แชร์ CUSA session เดิมยังใช้ได้ ดู [คู่มือ Consent และข้อมูลระบบลูก](SSO-INTEGRATION.md) Admin เปิดข้อมูลเพิ่มที่ **แอปพลิเคชัน → ตั้งค่าข้อมูลและ Consent** ห้าม rollback ไป build ที่ไม่มี Consent gate
+
+คิวจาก migration 007 ยังคงทำงานตาม [คู่มือคิว](WAITING-ROOM.md) ส่วน scheduler ใช้ `BACKGROUND_JOBS_ENABLED=true` ไม่ต้องตั้ง Plesk Cron
 
 ห้าม rollback ไป build ที่ไม่มี queue gate ขณะ Service ยังเปิดคิว เพราะ build เก่าจะไม่บังคับคิว ต้องหยุดรับงานและเปลี่ยน policy โดยผู้มีสิทธิ์พร้อม audit ก่อนพิจารณาย้อนรุ่น
 

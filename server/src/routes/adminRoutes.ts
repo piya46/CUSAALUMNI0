@@ -20,6 +20,8 @@ adminRouter.post('/applications', controller.createApplication);
 adminRouter.delete('/applications/:id', controller.deleteApplication);
 adminRouter.get('/applications/:id/queue', readQueueSettings);
 adminRouter.put('/applications/:id/queue', saveQueueSettings);
+adminRouter.get('/applications/:id/sharing',controller.sharingPolicy);
+adminRouter.put('/applications/:id/sharing',controller.saveSharingPolicy);
 adminRouter.get('/api-keys', controller.apiKeys);
 adminRouter.post('/api-keys', controller.createApiKey);
 adminRouter.delete('/api-keys/:id', controller.deleteApiKey);

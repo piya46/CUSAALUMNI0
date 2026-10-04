@@ -1,0 +1,14 @@
+.consent-recipient{display:flex;align-items:center;gap:16px;background:linear-gradient(120deg,#fff8dc,#fff0db);border:1px solid #f3d39a;border-radius:18px;padding:20px;margin:22px 0;text-align:left;color:#7a4214}
+.consent-recipient h2{margin:3px 0;font-size:1.35rem;color:#503414}.consent-recipient small{overflow-wrap:anywhere}
+.consent-purpose{border-left:3px solid #d88a22;padding:2px 16px;text-align:left;margin:22px 0}.consent-purpose p{margin:5px 0;color:#65594a;white-space:pre-wrap}
+.consent-intro,.consent-note{font-size:.9rem;line-height:1.8;text-align:left;color:#6f665c}
+.consent-scopes{padding:0;border:0;margin:22px 0;display:grid;gap:10px;text-align:left}.consent-scopes legend{font-weight:700;margin-bottom:12px}
+.consent-scope{display:flex;gap:12px;align-items:flex-start;padding:16px;border:1px solid #e6ded2;border-radius:13px;background:#fff;cursor:pointer;transition:border-color .18s,background .18s,box-shadow .18s}
+.consent-scope.selected{border-color:#dca754;background:#fffaf0}.consent-scope:focus-within{outline:3px solid #ebb13c;outline-offset:3px}.consent-scope input{width:19px;height:19px;flex-shrink:0;accent-color:#ab610d;margin-top:3px}
+.consent-scope span{flex:1;min-width:0}.consent-scope strong{display:block;color:#503c27}.consent-scope small{display:block;line-height:1.7;font-size:.84rem;margin-top:5px;color:#706558}
+.consent-scope .consent-required{display:block;color:#9a631e;font-size:.72rem;font-weight:500}.consent-check{color:#a66c17;margin-top:4px;flex-shrink:0}
+.consent-actions{display:flex;gap:12px;justify-content:space-between;margin-top:24px}.consent-actions .primary{flex:1}.consent-version{font-size:.73rem;color:#776e64;margin:18px 0 0}
+.sharing-policy{margin-top:12px}.sharing-policy form{margin-top:16px;display:grid;gap:12px}.sharing-policy textarea{min-height:100px}.sharing-scope{display:flex;gap:9px;align-items:center;text-align:left}
+.consent-history{margin:22px 0;background:#fff;border:1px solid #e6ded2;border-radius:16px;padding:24px}.consent-history h2{font-size:1.15rem}.consent-history ul{padding:0;list-style:none}.consent-history li{padding:16px 0;border-bottom:1px solid #ece5dc}.consent-history li:last-child{border:0}.consent-history small{display:block;margin:8px 0;overflow-wrap:anywhere}
+@media(max-width:500px){.consent-actions{flex-direction:column-reverse}.consent-scope{padding:13px;gap:9px}.consent-recipient{padding:16px}}
+@media(prefers-reduced-motion:reduce){.consent-scope{transition:none}}

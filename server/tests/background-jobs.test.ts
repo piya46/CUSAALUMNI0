@@ -104,10 +104,10 @@ test('credential cleanup bounds batches, filters expiry and never deletes audit/
     calls.push(sql); return [{ affectedRows: sql.includes('factor_challenges') ? 1000 : 0 }, []];
   } } as unknown as PoolConnection;
   const removed = await cleanupExpiredCredentials(connection);
-  assert.equal(removed.factor_challenges, 100_000); assert.equal(calls.length, 107);
-  assert.ok(calls.every(sql => /^DELETE FROM (factor_challenges|sessions|oauth_flows|otp_challenges|mfa_enrollments|authorization_codes|access_tokens|rate_limits) WHERE (expires_at|reset_at)<UTC_TIMESTAMP\(3\) LIMIT 1000$/.test(sql)));
+  assert.equal(removed.factor_challenges, 100_000); assert.equal(calls.length, 108);
+  assert.ok(calls.every(sql => /^DELETE FROM (factor_challenges|sessions|oauth_flows|otp_challenges|mfa_enrollments|authorization_codes|access_tokens|rate_limits|sso_consents) WHERE (expires_at|reset_at)<UTC_TIMESTAMP\(3\) LIMIT 1000$/.test(sql)));
   const abort = new AbortController(); abort.abort();
-  await assert.rejects(cleanupExpiredCredentials(connection, abort.signal)); assert.equal(calls.length, 107);
+  await assert.rejects(cleanupExpiredCredentials(connection, abort.signal)); assert.equal(calls.length, 108);
 });
 
 test('operations diagnostics redact raw grants and retain alerts for broad privileges, backlog and overdue evidence', async () => {

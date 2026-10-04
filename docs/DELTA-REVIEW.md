@@ -16,7 +16,7 @@
 | แยก SSO กับ business rules | คง Google/MFA/Allowlist, PKCE, scoped roles, opaque tokens และ introspection; ไม่เปลี่ยนเป็น JWT offline ที่ทำให้เพิกถอนช้าขึ้น |
 | Self-service | มีหน้า Session/MFA/Passkey/LINE แล้ว; เพิ่ม logout ทุกอุปกรณ์ของตนเองแบบ CSRF + atomic audit |
 | Service ขอถอนเครื่องเก่า | เพิ่ม token:revoke scope และ POST /api/sso/revoke ถอน grants ของ session เฉพาะ Service เจ้าของคีย์ ไม่ให้ Service ถอน session กลางหรือสิทธิ์ Service อื่น |
-| Consent screen | เพิ่มรายการข้อมูลที่จะส่งให้ Service ในบริบท Login คงการใช้ข้อมูลตาม purpose และไม่อ้างว่าการกด Login เป็น PDPA consent ทุกกรณี; ไม่แชร์ phone/evidence เพิ่ม ไม่สร้างประวัติ consent ปลอม |
+| Consent screen | รุ่น 008 เพิ่มหน้าขออนุญาตก่อนออก code ผู้ใช้เลือกกลุ่มข้อมูลเองภายใต้ policy ของ Service; profile/email/phone/LINE/assurance แยก scope, มี phone-match ที่ไม่ส่งเบอร์จริง เก็บผลอนุญาตจริงและถอนสิทธิ์ได้ ไม่แชร์หลักฐาน MFA ดู SSO-INTEGRATION.md |
 | Developer self-registration | คง Admin approval + API key แสดงครั้งเดียว แทนการให้บุคคลใดก็ได้สร้าง trusted callback เอง Portal แบบ delegated owner ต้องมี tenant/ownership/quota และ approval policy ก่อนเปิด |
 | SLO Webhook / Device ID | ยังไม่เพิ่ม global Device ID หรือ webhook ส่ง URL ตาม request ใช้ scoped revocation + introspection ที่มีอยู่ การเพิ่ม webhook ต้องมี SSRF protection, signed payload, retries/outbox และรับรอง endpoint ownership |
 | Server-to-server quotas | มี 3,000/min/Service และ 1,500/min/key รวม endpoints อยู่แล้ว; revoke ใช้ชุดเดียวกัน มี coarse IP limit ก่อน DB ไม่เปลี่ยนเป็น unlimited |

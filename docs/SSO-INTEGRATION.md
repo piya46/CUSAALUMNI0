@@ -4,7 +4,64 @@
 
 เพิ่ม `POST /api/sso/revoke` รับ `{"token":"<ACCESS_TOKEN>"}` พร้อม X-API-Key ที่มี scope `token:revoke` ถอน token/code ของ session เดียวกันเฉพาะ Service เจ้าของคีย์ ไม่ลบ session กลาง ไม่กระทบ Service อื่นและไม่ห้าม login ใหม่ ตอบ `200 {"ok":true}` รวม unknown/cross-app token BFF ต้องทำลาย local session/cache ของตนเองด้วย คีย์เดิมไม่ได้รับ scope เพิ่มอัตโนมัติ รายละเอียดและตัวอย่างอยู่ใน [OpenAPI](../web/public/openapi.json)
 
-API นี้เป็น SSO สำหรับระบบภายในที่ผู้ดูแลอนุมัติ ใช้ authorization code + PKCE S256, Google Login และ MFA ของ CUSA ก่อนออก token เป็น **custom first-party SSO API** ไม่ใช่ OpenID Connect provider แบบสมบูรณ์: ไม่มี discovery, ID token, refresh token, dynamic client registration หรือหน้าขอ consent สำหรับบุคคลที่สาม
+API นี้เป็น SSO สำหรับระบบที่ผู้ดูแลอนุมัติ ใช้ authorization code + PKCE S256, Google Login, MFA และ Consent ก่อนออก token เป็น **custom first-party SSO API** ไม่ใช่ OpenID Connect provider แบบสมบูรณ์: ไม่มี discovery, ID token, refresh token หรือ dynamic client registration
+
+## เลือกข้อมูลที่จะรับและขอ Consent (migration 008)
+
+1. Admin เปิด **แอปพลิเคชัน → ตั้งค่าข้อมูลและ Consent** เลือกข้อมูลสูงสุดที่ Service ขอได้ และระบุวัตถุประสงค์ให้ชัด เช่น “ใช้ชื่อและรูปแสดงบัญชีสมาชิก และตรวจเบอร์ที่สมัครกิจกรรมกับเบอร์ที่ยืนยันแล้ว”
+2. BFF ส่ง `scope` ใน authorize เป็นรายการคั่นด้วยช่องว่าง เช่น `identity:read profile email phone:match assurance` ค่านี้เป็นขอบเขตข้อมูลผู้ใช้ แยกจาก scope ของ API key ที่ใช้อนุญาตการเรียก endpoint
+3. หลัง Google + MFA และผ่านนโยบายเบอร์/สมาชิกแล้ว ผู้ใช้เห็น `/consent` พร้อมชื่อและ Origin ของ Service วัตถุประสงค์ และรายการข้อมูล รหัสบัญชี/Role เป็นข้อมูลจำเป็น ส่วนข้อมูลเสริม **ไม่ถูกเลือกไว้ล่วงหน้า** ผู้ใช้เลือกบางรายการหรือปฏิเสธทั้งหมดได้ ระบบไม่จำ Consent เพื่อข้ามหน้านี้ในการ login ครั้งถัดไป
+4. กดอนุญาตจึงสร้าง code อายุ 90 วินาที; Token อายุไม่เกิน 300 วินาทีผูกกับข้อมูลที่อนุมัติจริง `scope` ใน token response เป็นรายการที่ได้รับจริง BFF ต้องรองรับข้อมูลไม่ครบ หากจำเป็นต่อการทำงานเฉพาะ ให้แจ้งผู้ใช้และเสนอทางเลือก ไม่อ้างว่าผู้ใช้อนุมัติครบตาม request
+5. กดไม่อนุญาตคืน callback `error=access_denied&state=...` ไม่มี code ตรวจ state ของ flow เดิมก่อนจัดการการปฏิเสธ ล้าง flow แล้วแสดงหน้าที่เหมาะสม ไม่เริ่ม login ซ้ำอัตโนมัติ
+6. ผู้ใช้ถอนแต่ละรายการได้ที่ **ความปลอดภัย → ข้อมูลที่อนุญาตให้ Service ใช้** เมื่อถอนแล้ว code/token ที่ผูกกับ Consent ใช้ไม่ได้ การตรวจ introspection ที่แคชไว้อาจล่าช้าไม่เกิน 5 วินาที; userinfo และ phone-match ไม่แคช ไม่ลบข้อมูลหรือ session ที่ระบบลูกเคยเก็บเอง
+
+| Scope | ข้อมูลที่คืนเมื่ออนุมัติ |
+| --- | --- |
+| `identity:read` | `sub`, `aud`, `roles` ของ Service นี้ พร้อม `scope`; เป็นข้อมูลจำเป็น |
+| `profile` | `name`, `given_name`, `family_name`, `picture` (HTTPS URL หรือ null), `department` ของ Service นี้ |
+| `email` | `email`, `email_verified: true` จากบัญชี Google |
+| `phone` | `phone_number` แบบ E.164, `phone_number_verified`, `phone_number_verified_at` Unix seconds; ถ้ายังไม่ยืนยันคืนเฉพาะ `phone_number_verified: false` |
+| `phone:match` | อนุญาต endpoint เปรียบเทียบเบอร์เท่านั้น ไม่เพิ่มเบอร์จริงใน userinfo/introspection |
+| `line` | `line: {linked, user_id?, login_channel_id?}`; ไม่ส่ง LINE access token/secret |
+| `assurance` | `authentication: {primary_method, second_step_method, verified_at, assurance, phishing_resistant}` |
+
+ค่าเริ่มต้นของ Service และ request ที่ไม่ใส่ scope คือ `identity:read profile email` เพื่อรองรับการขอโปรไฟล์แบบเดิม แต่ยังต้องผ่าน Consent เสมอ `phone`, `phone:match`, `line`, `assurance` ไม่เปิดให้ทุก Service อัตโนมัติ Scope ไม่รู้จัก/ซ้ำ/เกิน policy จะถูกปฏิเสธ ไม่ตัดส่วนเกินแล้วให้ผ่านเงียบ ๆ ทั้ง userinfo และ introspection ใช้กฎการเปิดเผยเดียวกัน ข้อมูลที่ไม่อนุมัติจะ **ไม่มี field** ใน response ไม่ส่ง `null` แทนข้อมูลที่แอบไม่อนุญาต
+
+LINE UID อยู่ภายใต้ LINE Provider ของ CUSA: Channel ใน Provider เดียวกันได้ UID เดียวกัน แต่ข้าม Provider UID อาจต่างกัน จึงอย่าใช้ UID ที่ระบบลูกได้จากคนละ Provider มาเทียบเป็นบุคคลเดียวกัน และการมี UID ไม่ได้รับประกันว่าส่งข้อความถึงบัญชีนั้นได้ อ่าน [ข้อกำหนดเรื่อง User ID ของ LINE](https://developers.line.biz/en/docs/messaging-api/getting-user-ids/)
+
+`authentication` เป็นข้อมูลตามนโยบาย **CUSA เอง** ไม่ใช่ระดับ AAL/KYC ที่ได้รับการรับรอง และไม่ทำให้ API นี้กลายเป็น OIDC provider:
+
+- `primary_method: "google"`; `second_step_method`: `email`, `totp`, `passkey`, `line` หรือ `recovery`
+- `assurance`: `cusa:strong` สำหรับ TOTP/Passkey; `cusa:standard` สำหรับ Email/LINE; `cusa:recovery` สำหรับรหัสกู้คืน
+- `verified_at` เป็นเวลายืนยันขั้นที่สอง ณ ตอนอนุมัติ ไม่ใช่เวลาที่ดึง userinfo; การ elevate session ภายหลังไม่ทำให้ Token เก่าอ้างระดับใหม่ได้ ต้องเริ่ม flow ใหม่
+- `phishing_resistant: true` ระบุว่าขั้นที่สองใช้ Passkey ที่ตรวจ user verification ไม่ใช่คำรับรองว่าบัญชีทั้งบัญชีไม่มีความเสี่ยง
+- เบอร์ที่ยืนยันแล้วเป็นหลักฐานการถือครอง ณ เวลาที่รับ SMS ไม่ใช่ชื่อผู้จดทะเบียนซิม การตรวจบัตรประชาชน หรือหลักฐานว่าผู้ใช้เป็นเจ้าของเบอร์ตลอดไป
+
+### ตรวจเบอร์ว่าตรงกับระบบลูกโดยไม่รับเบอร์จริง
+
+เลือก `phone:match` ใน Service policy และ authorize request แล้วให้ผู้ใช้อนุมัติ จากนั้นเรียกผ่าน BFF ด้วย token ของผู้ใช้นั้นและ API key ของ Service เดียวกัน:
+
+```http
+POST /api/sso/phone-match
+Content-Type: application/json
+X-API-Key: <SERVER_SIDE_KEY_WITH_IDENTITY_READ>
+
+{"token":"<ACCESS_TOKEN>","phone_number":"0812345678"}
+```
+
+เบอร์ไทย `0812345678`, `081-234-5678` และ `+66812345678` ถูกเปรียบเทียบในรูป E.164 เดียวกัน ส่งเบอร์ใน JSON body เท่านั้น ไม่ใช้ URL/query, analytics หรือ log ของ BFF:
+
+```json
+{"status":"matched","match":true,"phone_number_verified":true,"phone_number_verified_at":2000000000}
+```
+
+`mismatch` คืน `match:false`; `unverified` คืน `match:null, phone_number_verified:false` ทั้งสองกรณีต้องไม่ถือว่าเบอร์ตรง ไม่ค้นหาผู้ใช้คนอื่นด้วยเบอร์ และไม่ผูก/ย้ายบัญชีอัตโนมัติเพราะเบอร์ตรงอย่างเดียว จำกัด 5 ครั้ง/Token/Service/นาทีเพิ่มจากโควตา API key; รอ `Retry-After` เมื่อได้ 429 เบอร์จากระบบลูกไม่ถูกเก็บเพิ่มใน CUSA และไม่มีเบอร์จริง/ค่าค้นหาที่แฮชใน response
+
+### การจัดเก็บและการเปลี่ยน policy
+
+คำขอ Consent มีอายุ 10 นาที ผูกกับ user/session/application/callback/PKCE/state/ขอบเขตข้อมูลและ policy version เก็บ nonce แบบ HMAC ใช้ครั้งเดียว และตรวจสิทธิ์ซ้ำใน transaction เดียวกับการอนุมัติ ออก code และ Audit Outbox ไม่อนุมัติผ่าน GET คำขอ POST ต้องผ่าน Origin/CSRF และ full session งานเบื้องหลังล้าง request หมดอายุและเก็บแถวบันทึกการอนุญาตไม่เกิน 90 วันตามนโยบายทางเทคนิคของรุ่นนี้ (ไม่ใช่ระยะเวลาที่อ้างว่ากฎหมายกำหนด); Audit ใช้นโยบาย retention ของระบบเดิม
+
+ทุกครั้งที่ Admin บันทึก policy จะเพิ่ม version และทำให้คำขอ/code/token เก่าใช้ไม่ได้ภายในขอบเขต cache เดิม ไม่เพิ่มสิทธิ์ให้ token เดิมย้อนหลัง การอัปเกรด 008 ทำให้ code/token ที่ไม่มี Consent ใช้ไม่ได้เช่นกัน ระบบลูกต้องเริ่ม authorization ใหม่ แต่ CUSA session เดิมยังใช้ได้ ห้าม rollback ไป backend ที่ไม่มีการตรวจ Consent เพราะอาจเปิดเผยข้อมูลที่ผู้ใช้ไม่อนุญาต
 
 ## ตั้งค่า application
 
@@ -21,10 +78,10 @@ API นี้เป็น SSO สำหรับระบบภายในท�
 | Endpoint | การยืนยันตัวตน | ผลลัพธ์ |
 | --- | --- | --- |
 | `GET /api/sso/login-context` | ไม่ต้องมี session; ตรวจ authorization parameters เดียวกับ authorize | ชื่อ/Origin ของแอปที่ลงทะเบียนและ internal returnTo สำหรับหน้า Login |
-| `GET /api/sso/authorize` | CUSA session ที่ผ่าน MFA | Redirect ไป callback พร้อม `code` และ `state` |
+| `GET /api/sso/authorize` | CUSA session ที่ผ่าน MFA | ไป `/consent` ก่อน; อนุมัติแล้วจึงกลับ callback พร้อม `code` และ `state` |
 | `POST /api/sso/token` | `X-API-Key`, scope `identity:read` | Opaque bearer token อายุสูงสุด 300 วินาที |
 | `POST /api/sso/introspect` | `X-API-Key`, scope `token:introspect` | `{active:false}` หรือข้อมูลผู้ใช้และ `aud` ของ application |
-| `GET /api/sso/userinfo` | `Authorization: Bearer ACCESS_TOKEN` | `{sub,email,name,given_name,family_name,department,roles,aud,email_verified:true}` |
+| `GET /api/sso/userinfo` | `Authorization: Bearer ACCESS_TOKEN` | `{sub,aud,roles,scope,...}` และข้อมูลที่ผู้ใช้อนุมัติ |
 | `OPTIONS /api/sso/userinfo` | Origin ของ application ที่ยังใช้งาน | CORS preflight สำหรับ GET และ Authorization เท่านั้น |
 
 Authorization code มีอายุ 90 วินาที ใช้ได้ครั้งเดียว และผูกกับ application, callback, PKCE และ CUSA session เดิม `state` ต้องเป็น base64url 32–128 ตัวอักษร สร้างด้วย CSPRNG อย่างน้อย 32 bytes; verifier ยาว 43–128 ตัวอักษรตาม PKCE และ challenge ต้องเป็น SHA-256 base64url แบบไม่มี padding
@@ -48,7 +105,7 @@ X-API-Key: <server-side secret>
 ```
 
 ```json
-{"access_token":"<opaque token>","token_type":"Bearer","expires_in":300,"scope":"identity:read"}
+{"access_token":"<opaque token>","token_type":"Bearer","expires_in":300,"scope":"identity:read profile email"}
 ```
 
 ```http
@@ -60,7 +117,7 @@ X-API-Key: <server-side secret>
 ```
 
 ```json
-{"active":true,"sub":"<user UUID>","email":"person@example.com","name":"Person","given_name":"Person","family_name":"","department":"Finance","roles":["viewer"],"exp":2000000000,"aud":"<application UUID>","scope":"identity:read"}
+{"active":true,"sub":"<user UUID>","email":"person@example.com","name":"Person","given_name":"Person","family_name":"","department":"Finance","roles":["viewer"],"exp":2000000000,"aud":"<application UUID>","scope":"identity:read profile email"}
 ```
 
 ## หน้าเข้าสู่ระบบกลาง

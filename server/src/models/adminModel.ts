@@ -236,6 +236,23 @@ export async function revokeApplication(actor: Actor, id: string, audit: AuditWr
   });
 }
 
+export async function getSharingPolicy(id:string) {
+  const [app]=await query<{allowedScope:string;purpose:string;version:number}>(
+    'SELECT allowed_claim_scopes AS allowedScope,sharing_purpose AS purpose,sharing_version AS version FROM applications WHERE id=? AND revoked_at IS NULL',[id]);
+  if(!app)throw new HttpError(404,'ไม่พบ Service','NOT_FOUND');
+  return {scopes:app.allowedScope.split(' '),purpose:app.purpose,version:app.version};
+}
+export async function updateSharingPolicy(actor:Actor,id:string,data:{scopes:string[];purpose:string},audit:AuditWriter) {
+  return transaction(async connection=>{
+    await lockAdministrators(actor,connection);
+    const [app]=await query<{id:string}>('SELECT id FROM applications WHERE id=? AND revoked_at IS NULL FOR UPDATE',[id],connection);
+    if(!app)throw new HttpError(404,'ไม่พบ Service','NOT_FOUND');
+    await execute('UPDATE applications SET allowed_claim_scopes=?,sharing_purpose=?,sharing_version=sharing_version+1 WHERE id=?',
+      [data.scopes.join(' '),data.purpose,id],connection);
+    await audit(connection,'application.sharing.updated',id,{scopes:data.scopes});
+  });
+}
+
 export async function addApiKey(actor: Actor, data: { applicationId: string; name: string; scopes: string[]; expiresInDays: number }, audit: AuditWriter) {
   return transaction(async connection => {
     await lockAdministrators(actor, connection);

@@ -1,3 +1,4 @@
+import { consentedCode } from './consent-fixture.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
@@ -24,7 +25,7 @@ test('service memberships and roles are isolated, audited, revocable, and enforc
   const sessionId = randomUUID(), keyA = randomToken(), keyB = randomToken(), verifier = randomToken();
   const redirectUri = 'https://service.example.test/callback';
   async function token(app: string, key: string) {
-    const code = await sso.issueAuthorizationCode({ applicationId: app, userId, sessionId, redirectUri, challenge: pkceChallenge(verifier) });
+    const code = await consentedCode(sso,{ applicationId: app, userId, sessionId, redirectUri, challenge: pkceChallenge(verifier) });
     return sso.exchangeAuthorizationCode({ apiKeyHash: hashToken(key), codeHash: hashToken(code), redirectUri, verifier });
   }
   try {
@@ -64,7 +65,7 @@ test('service memberships and roles are isolated, audited, revocable, and enforc
     await assert.rejects(access.revokeRole(actor, appA, viewerA.id, audit), { code: 'ROLE_IN_USE' });
     await assert.rejects(access.saveMember(actor, appA, userId, { department: 'changed', roleIds: [approverA.id] }, async () => { throw new Error('audit unavailable'); }), /audit unavailable/);
     assert.equal((await sso.getUserInfo(hashToken(a.accessToken)))?.department, 'HR');
-    const pendingCode = await sso.issueAuthorizationCode({ applicationId: appA, userId, sessionId, redirectUri, challenge: pkceChallenge(verifier) });
+    const pendingCode = await consentedCode(sso,{ applicationId: appA, userId, sessionId, redirectUri, challenge: pkceChallenge(verifier) });
     await access.saveMember(actor, appA, userId, { department: 'HR', roleIds: [approverA.id] }, audit);
     assert.equal(await sso.getUserInfo(hashToken(a.accessToken)), null);
     assert.equal((await sso.getUserInfo(hashToken(b.accessToken)))?.department, 'Finance');
