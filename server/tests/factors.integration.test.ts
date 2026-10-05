@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID, createHmac } from 'node:crypto';
+import { randomUUID, randomInt, createHmac } from 'node:crypto';
 import test,{after} from 'node:test';
 import request from 'supertest';
 import { config } from '../src/config.js';
@@ -94,8 +94,55 @@ test('Firebase phone binding is session-bound, encrypted, unique and does not pr
   assert.equal(await phone.finishPhoneVerification(s.sessionId,issued.challengeId,proof,audit),true);
   assert.equal(await phone.finishPhoneVerification(s.sessionId,issued.challengeId,proof,audit),false);
   const [row]=await query<any>('SELECT * FROM phone_identities WHERE user_id=?',[s.userId]);assert.equal(unseal(row.phone_encrypted),number);assert.equal(row.phone_hash,hashToken(`phone:${number}`));
-  const otherChallenge=await phone.startPhoneVerification(other.sessionId,number,audit);assert.equal(await phone.finishPhoneVerification(other.sessionId,otherChallenge.challengeId,proof,audit),false);
+  // A Service account must not reuse an internal account's verified phone,
+  // even if a different Firebase UID is presented for that number.
+  await execute("UPDATE users SET account_type='service' WHERE id=?",[other.userId]);
+  await execute('DELETE FROM allowed_emails WHERE email=?',[other.email]);
+  const otherChallenge=await phone.startPhoneVerification(other.sessionId,number,audit);assert.equal(await phone.finishPhoneVerification(other.sessionId,otherChallenge.challengeId,{...proof,uid:randomUUID()},audit),false);
+  assert.equal((await query<any>('SELECT status FROM factor_challenges WHERE id=?',[otherChallenge.challengeId]))[0].status,'used');
+  assert.equal((await query('SELECT user_id FROM phone_identities WHERE user_id=?',[other.userId])).length,0);
   assert.equal((await findSession(s.token))?.mfaMethod,'totp');
+});
+test('simultaneous phone verification has one owner; duplicate consumes proof and preserves phone gate',{skip:!enabled},async()=>{
+  const accounts=await Promise.all([fixture(),fixture()]),number=`+668${randomInt(10000000,100000000)}`;
+  for(const account of accounts)await execute('UPDATE users SET phone_required=TRUE WHERE id=?',[account.userId]);
+  const challenges=await Promise.all(accounts.map(account=>phone.startPhoneVerification(account.sessionId,number,audit)));
+  const proof={phone:number,uid:randomUUID(),authenticatedAt:Math.floor(Date.now()/1000)};
+  const results=await Promise.all(accounts.map((account,i)=>phone.finishPhoneVerification(account.sessionId,challenges[i].challengeId,proof,audit)));
+  assert.deepEqual([...results].sort(),[false,true]);
+  const winner=results.indexOf(true),loser=results.indexOf(false);
+  const rows=await query<any>('SELECT user_id,phone_encrypted FROM phone_identities WHERE phone_hash=?',[hashToken(`phone:${number}`)]);
+  assert.equal(rows.length,1);assert.equal(rows[0].user_id,accounts[winner].userId);assert.equal(unseal(rows[0].phone_encrypted),number);
+  for(let i=0;i<accounts.length;i++){
+    assert.equal((await query<any>('SELECT status FROM factor_challenges WHERE id=?',[challenges[i].challengeId]))[0].status,'used');
+    assert.equal(await phone.finishPhoneVerification(accounts[i].sessionId,challenges[i].challengeId,proof,audit),false);
+  }
+  assert.equal((await findSession(accounts[loser].token))?.phoneRequired,true);
+  assert.equal((await findSession(accounts[winner].token))?.phoneRequired,false);
+  const failures=await query<any>("SELECT JSON_EXTRACT(payload,'$.metadata') AS metadata FROM audit_outbox WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.target'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event'))='phone.verification.failure'",[accounts[loser].userId]);
+  assert.equal(failures.length,1);
+  const metadata=typeof failures[0].metadata==='string'?JSON.parse(failures[0].metadata):failures[0].metadata;
+  assert.deepEqual(metadata,{failure_reason:'PHONE_UNAVAILABLE'});
+});
+test('duplicate phone/UID never reassigns ownership and audit failure rolls back challenge consumption',{skip:!enabled},async()=>{
+  const owner=await fixture(),other=await fixture(),number=`+669${randomInt(10000000,100000000)}`;
+  const proof={phone:number,uid:randomUUID(),authenticatedAt:Math.floor(Date.now()/1000)};
+  const first=await phone.startPhoneVerification(owner.sessionId,number,audit);
+  await assert.rejects(phone.finishPhoneVerification(owner.sessionId,first.challengeId,proof,async()=>{throw new Error('audit unavailable');}),/audit unavailable/);
+  assert.equal((await query('SELECT user_id FROM phone_identities WHERE user_id=?',[owner.userId])).length,0);
+  assert.equal(await phone.finishPhoneVerification(owner.sessionId,first.challengeId,proof,audit),true);
+  // Soft deletion does not silently release the reserved phone or Firebase UID.
+  await execute('UPDATE users SET deleted_at=UTC_TIMESTAMP(3) WHERE id=?',[owner.userId]);
+  const duplicate=await phone.startPhoneVerification(other.sessionId,number,audit);
+  await assert.rejects(phone.finishPhoneVerification(other.sessionId,duplicate.challengeId,proof,async()=>{throw new Error('audit unavailable');}),/audit unavailable/);
+  assert.equal((await query<any>('SELECT status FROM factor_challenges WHERE id=?',[duplicate.challengeId]))[0].status,'pending');
+  assert.equal(await phone.finishPhoneVerification(other.sessionId,duplicate.challengeId,proof,audit),false);
+  await execute('UPDATE users SET phone_sent_at=NULL WHERE id=?',[other.userId]);
+  const changedNumber=`+666${randomInt(10000000,100000000)}`,changed=await phone.startPhoneVerification(other.sessionId,changedNumber,audit);
+  assert.equal(await phone.finishPhoneVerification(other.sessionId,changed.challengeId,{...proof,phone:changedNumber},audit),false);
+  const [original]=await query<any>('SELECT user_id,phone_encrypted FROM phone_identities WHERE firebase_uid_hash=?',[hashToken(`firebase:${proof.uid}`)]);
+  assert.equal(original.user_id,owner.userId);assert.equal(unseal(original.phone_encrypted),number);
+  assert.equal((await query('SELECT user_id FROM phone_identities WHERE user_id=?',[other.userId])).length,0);
 });
 test('old/mismatched Firebase phone claims are consumed and cannot satisfy required phone gate',{skip:!enabled},async()=>{
   const s=await fixture();await execute('UPDATE users SET phone_required=TRUE WHERE id=?',[s.userId]);assert.equal((await findSession(s.token))?.phoneRequired,true);

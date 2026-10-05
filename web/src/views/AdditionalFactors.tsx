@@ -95,10 +95,29 @@ export function PhoneVerification({settings,onVerified,serviceName}:{settings:Se
     captcha.current?.clear();captcha.current=new RecaptchaVerifier(auth,captchaId,{size:window.matchMedia('(max-width:480px)').matches?'compact':'normal'});
     confirmation.current=await signInWithPhoneNumber(auth,normalizedPhone,captcha.current);setSent(true);setCode('');
   }catch(e){setError(e instanceof ApiError?e.message:firebasePhoneError(e,'send'));if(e instanceof ApiError&&e.retryAfter){const stamp=Date.now();setNow(stamp);setDeadline(stamp+e.retryAfter*1000);}captcha.current?.clear();captcha.current=null;}finally{setBusy(false);sending.current=false;}}
-  async function verify(){setBusy(true);setError('');try{if(!confirmation.current)throw new Error();const result=await confirmation.current.confirm(code);const idToken=await result.user.getIdToken();await api('/auth/phone/verify','POST',{challengeId:challenge.current,idToken});await cleanupAuth.current?.();confirmation.current=null;await onVerified();}catch(e){setError(e instanceof ApiError?e.message:firebasePhoneError(e,'verify'));}finally{setBusy(false);}}
+  async function verify(){
+    if(busy)return;
+    setBusy(true);setError('');
+    try{
+      if(!confirmation.current)throw new Error();
+      const result=await confirmation.current.confirm(code);
+      const idToken=await result.user.getIdToken();
+      await api('/auth/phone/verify','POST',{challengeId:challenge.current,idToken});
+      await cleanupAuth.current?.();confirmation.current=null;await onVerified();
+    }catch(e){
+      setError(e instanceof ApiError?e.message:firebasePhoneError(e,'verify'));
+      if(e instanceof ApiError&&e.code==='PHONE_UNAVAILABLE'){
+        // The server consumed this proof. Retain the resend cooldown, and clear
+        // Firebase state so retry cannot reuse the rejected account binding.
+        confirmation.current=null;challenge.current='';setCode('');setSent(false);
+        await cleanupAuth.current?.().catch(()=>{});
+      }
+    }finally{setBusy(false);}
+  }
   return <div className="phone-verification">
     <ol className="phone-steps" aria-label="ขั้นตอนยืนยันเบอร์"><li className={!sent?'current':'complete'} aria-current={!sent?'step':undefined}><span>{sent?<Check size={13}/>:1}</span>กรอกเบอร์</li><li className={sent?'current':''} aria-current={sent?'step':undefined}><span>2</span>ยืนยันรหัส SMS</li></ol>
     <div className="phone-purpose"><Smartphone size={20}/><div><strong>ยืนยันเบอร์มือถือสำหรับบัญชี CUSA SSO</strong>{serviceName&&<span>เพื่อเริ่มใช้งาน {serviceName}</span>}<small>ยืนยันว่าเป็นเบอร์ของคุณ ไม่ใช่การตรวจบัตรประชาชน และไม่ใช้ SMS แทน MFA</small></div></div>
+    <p className="field-hint">เบอร์มือถือหนึ่งเบอร์ผูกได้เพียงหนึ่งบัญชี CUSA SSO รวมทุก Service หากเคยผูกแล้วให้ใช้บัญชีเดิมหรือติดต่อผู้ดูแล</p>
     <div className="field"><label htmlFor={phoneId}>เบอร์มือถือของคุณ</label><div className="phone-input-group"><span className="phone-country" aria-hidden="true">🇹🇭 <span>ไทย <small>+66</small></span></span><input id={phoneId} type="tel" inputMode="tel" value={phone} placeholder="081 234 5678" maxLength={24} onChange={e=>{setPhone(e.target.value);setSent(false);setCode('');setError('');confirmation.current=null;}} onBlur={()=>{setTouched(true);setPhone(displayThaiMobile(phone));}} disabled={busy} autoComplete="tel-national" aria-describedby={hintId} aria-invalid={touched&&!!phone&&!normalizedPhone}/>{normalizedPhone&&<Check size={19} className="phone-valid" aria-label="รูปแบบเบอร์ถูกต้อง"/>}</div><small id={hintId} className={touched&&!!phone&&!normalizedPhone?'phone-invalid':'field-hint'}>{touched&&!!phone&&!normalizedPhone?'กรอกเบอร์มือถือไทย 10 หลัก เริ่มด้วย 06, 08 หรือ 09':'กรอกเบอร์ไทย 10 หลักตามปกติ ไม่ต้องเปลี่ยน 0 เป็น +66'}</small></div>
     <label className="checkbox-row"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} disabled={busy}/><span>ฉันได้อ่าน<a href="/privacy" target="_blank" rel="noopener noreferrer">นโยบายความเป็นส่วนตัว</a> และยินยอมให้ส่งเบอร์ไปยัง Google/Firebase เพื่อรับ SMS และป้องกันการใช้งานผิดวัตถุประสงค์</span></label>
     {error&&<p className="inline-error" role="alert">{error}</p>}<div id={captchaId}/>

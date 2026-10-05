@@ -89,6 +89,10 @@ Webhook ตรวจ HMAC-SHA256 บน **raw body** ก่อนอ่าน JS
 
 Backend ตรวจ Firebase signature/issuer/audience/expiry และ revoked/disabled state ผ่าน Admin SDK, ต้อง `sign_in_provider=phone`, `auth_time` ภายใน 3 นาทีและหลังเริ่ม challenge (เผื่อเวลา 10 วินาที) ไม่ยอมให้ refresh token เก่ามาทำเป็นยืนยัน SMS ใหม่; ผูก challenge กับ session และเบอร์ที่ร้องขอ, unique HMAC ของเบอร์/UID; จำกัด API 3 คำขอ/10 นาทีและ cooldown 60 วินาที เบอร์เดิมใช้ได้หนึ่งบัญชีในระบบ ณ ขณะนั้น แต่ไม่ใช่ “หนึ่งคนหนึ่งเบอร์” และต้องมีวิธีประสานกรณีเบอร์หมุนเวียน
 
+**ห้ามผูกเบอร์ซ้ำข้ามบัญชี:** ใช้ข้อกำหนด UNIQUE ของ `phone_identities` ที่มีตั้งแต่ migration 006 บังคับทั้ง user_id, phone_hash และ firebase_uid_hash ครอบคลุมบัญชีภายในและบัญชีจากทุก Service การยืนยันพร้อมกันมีผู้สำเร็จเพียงรายเดียว ไม่มี upsert/การโอนเบอร์ให้บัญชีใหม่ เมื่อชนกันจะใช้ challenge นั้นแล้ว บันทึก failure ผ่าน Audit Outbox ใน transaction เดียวกัน และตอบ `409 PHONE_UNAVAILABLE` โดยไม่ส่งชื่อ/อีเมล/รหัสบัญชีเจ้าของเดิม หากบันทึก Audit ไม่สำเร็จ transaction จะ rollback
+
+ไม่มี API สำหรับตรวจว่าเบอร์ของคนอื่นถูกใช้แล้วก่อนพิสูจน์การครอบครองด้วย SMS เพื่อลดการไล่ค้นข้อมูลบัญชี การตรวจนี้อาจเกิดหลัง Firebase ส่ง SMS แล้ว หน้าเว็บจะล้าง proof ที่ใช้ไม่ได้และคง cooldown เดิมไว้ ไม่ถือว่ายืนยันเบอร์สำเร็จ การ soft-delete บัญชีหรือรีเซ็ต MFA ไม่ปล่อยเบอร์ให้บัญชีอื่นอัตโนมัติ กรณีเบอร์ถูกผู้ให้บริการนำกลับมาใช้ใหม่ต้องติดต่อผู้ดูแลเพื่อตรวจสอบ รุ่นนี้ไม่เพิ่มการโอนเบอร์ด้วยตัวเอง และไม่ต้องเพิ่ม migration หรือค่า `.env`
+
 **ขอบเขตของ cooldown:** Firebase SDK ส่ง SMS ไป Firebase โดยตรง ผู้เรียกอาจข้ามหน้า CUSA เพื่อเรียก Firebase API ได้ การจำกัดฝั่ง CUSA จึงไม่ใช่ hard cap ค่า SMS ต้องควบคุม region/quota/reCAPTCHA ที่ Firebase ด้วย โค้ดใช้ reCAPTCHA ของ Phone Auth SDK ไม่อ้างว่าเป็นการบังคับ reCAPTCHA v3 enterprise ทุก project
 
 Firebase auth state อยู่ใน memory เท่านั้น; หลังยืนยัน/ออกจากหน้าเรียก signOut ไม่เก็บ Firebase token ใน localStorage ไม่มีการเก็บ SMS OTP ใน CUSA และข้อความ SMS ถูกกำหนดโดย Firebase ไม่ใช้ template ของ Email OTP

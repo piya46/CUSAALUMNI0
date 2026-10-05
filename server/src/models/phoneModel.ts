@@ -29,9 +29,17 @@ export async function finishPhoneVerification(sessionId:string,id:string,proof:{
     if(challenge.data.phoneHash!==hashToken(`phone:${proof.phone}`)||proof.authenticatedAt<new Date(challenge.created_at).getTime()/1000-10||proof.authenticatedAt<now-180||proof.authenticatedAt>now+10){
       await record(conn,'phone.verification.failure',s.user_id,{failure_reason:'INVALID_PHONE_PROOF'});return false;
     }
-    const [existing]=await query('SELECT user_id FROM phone_identities WHERE user_id=? OR phone_hash=? OR firebase_uid_hash=?',[s.user_id,challenge.data.phoneHash,hashToken(`firebase:${proof.uid}`)],conn);
-    if(existing){await record(conn,'phone.verification.failure',s.user_id,{failure_reason:'PHONE_UNAVAILABLE'});return false;}
-    await execute('INSERT INTO phone_identities(user_id,phone_hash,phone_encrypted,firebase_uid_hash) VALUES (?,?,?,?)',[s.user_id,challenge.data.phoneHash,seal(proof.phone),hashToken(`firebase:${proof.uid}`)],conn);
+    // The unique user/phone/Firebase UID indexes arbitrate across accounts and
+    // workers atomically. Never upsert: that could transfer somebody else's phone.
+    // Handle the duplicate statement inside this transaction so the used challenge
+    // and failure audit commit together, without revealing the existing owner.
+    try {
+      await execute('INSERT INTO phone_identities(user_id,phone_hash,phone_encrypted,firebase_uid_hash) VALUES (?,?,?,?)',[s.user_id,challenge.data.phoneHash,seal(proof.phone),hashToken(`firebase:${proof.uid}`)],conn);
+    } catch (error) {
+      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ER_DUP_ENTRY') throw error;
+      await record(conn,'phone.verification.failure',s.user_id,{failure_reason:'PHONE_UNAVAILABLE'});
+      return false;
+    }
     await record(conn,'phone.verified',s.user_id);return true;
   });
 }

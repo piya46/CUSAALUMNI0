@@ -1,5 +1,12 @@
 # Validation record
 
+## Verified phone uniqueness — 2026-10-05
+
+- Phone binding now relies directly on the existing unique user/phone/Firebase UID indexes and handles a duplicate insert inside the transaction. The losing request consumes its challenge and records the failure atomically; it does not replace the owner or expose the owner's identity. Other database errors remain failures, and failed audit writes roll back the transaction.
+- Local MariaDB factor integration suite: **12 passed, 0 failed**. Covers concurrent requests with exactly one owner, internal versus Service accounts, phone and Firebase UID collisions, replay rejection, retention of the required-phone gate, preservation after soft deletion, and audit rollback on both successful and rejected bindings.
+- Additional-factor browser suite: **12 passed, 0 failed**. A rejected binding clears the used confirmation/code and in-memory Firebase session, preserves resend cooldown and never passes the phone gate. Existing phone normalization, provider-error redaction, SMS success and MFA choices remain passing. Provider responses are mocked; no real SMS or LINE message is sent.
+- Server/React typecheck, production build and whitespace checks pass. Reuses migration 006 constraints; no migration, dependency or private `.env` change. Deploy the updated build and restart; production database and provider configuration were not modified.
+
 ## Service account separation and enrollment policies — 2026-10-05
 
 - Migration 009 adds an explicit internal/service identity type, service enrollment policies, invitations, provisional memberships, activity receipts and the `SQL SECURITY INVOKER` eligibility view. Existing identities retain internal allowlist requirements; Service registration never grants platform administration. No private `.env`, dependency or production database change was made.

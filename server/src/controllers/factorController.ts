@@ -71,6 +71,6 @@ export async function phoneStart(req:Request,res:Response){const b=z.object({pho
 export async function phoneVerify(req:Request,res:Response){
   const b=z.object({challengeId:id,idToken:z.string().min(100).max(10000)}).strict().parse(req.body);
   const proof=await verifyFirebasePhoneToken(b.idToken);
-  if(!await phone.finishPhoneVerification(req.identity!.sessionId,b.challengeId,proof,record(req)))throw new HttpError(409,'ยืนยันเบอร์ไม่ได้ กรุณาเริ่มใหม่หรือติดต่อผู้ดูแล','PHONE_UNAVAILABLE');
+  if(!await phone.finishPhoneVerification(req.identity!.sessionId,b.challengeId,proof,record(req)))throw new HttpError(409,'ไม่สามารถยืนยันหรือผูกเบอร์นี้ได้ หากเคยผูกแล้วให้ใช้บัญชีเดิม หรือติดต่อผู้ดูแล','PHONE_UNAVAILABLE');
   res.json({ok:true});
 }

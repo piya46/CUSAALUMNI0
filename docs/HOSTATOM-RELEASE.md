@@ -1,5 +1,7 @@
 # อัปโหลด CUSA SSO รุ่นนี้บน HostAtom / Plesk
 
+ปรับปรุง 5 ตุลาคม 2026: การผูกเบอร์ซ้ำรองรับคำขอยืนยันพร้อมกันแล้ว โดยใช้ UNIQUE เดิมจาก migration 006 เก็บเจ้าของเบอร์เดิมและ Audit เมื่อปฏิเสธ หน้าเว็บล้างคำขอที่ใช้แล้วแต่ยังคง cooldown ไม่มี migration หรือ `.env` เพิ่มสำหรับการแก้ส่วนนี้ อัปโหลด build ใหม่แล้ว Restart ตามขั้นตอนด้านล่าง
+
 รุ่นนี้ต้อง migrate ถึง `009_service_accounts.sql` ก่อน Restart และไม่เพิ่มค่า `.env` หากยังไม่ได้ใช้ migration 008 ระบบจะเพิ่ม policy ใน `applications`, ตาราง `sso_consents` และ `consent_id` ใน code/token ด้วย ให้สิทธิ์ runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) ครบทั้งสองรุ่น
 
 Migration 009 เพิ่มประเภทบัญชี นโยบายสมาชิก คำเชิญ และข้อมูลกิจกรรมแยก Service รวมถึง View `sso_login_accounts` ต้องให้บัญชี migration สร้าง View ได้ และให้ runtime SELECT บน View + สิทธิ์ตารางใหม่ตาม runtime-grants.sql ก่อน Restart ดู [ขั้นตอนตั้งนโยบาย](SERVICE-ACCESS.md#ตั้งนโยบายรับสมาชิก) ค่าเริ่มต้นปิดรับสมัคร และงานจัดการบัญชีไม่ใช้งานเป็น preview เท่านั้น ไม่มีการลบอัตโนมัติ

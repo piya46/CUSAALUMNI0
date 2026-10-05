@@ -54,8 +54,8 @@ test('phone failure diagnostics never expose provider messages, custom data or u
     expect(firebasePhoneError(error,'verify')).not.toContain(sensitive);
   }
 });
-for(const scenario of ['configuration','rate-limit','sms-region','sms-sent','sms-verified'] as const)test({'sms-verified':'Optional phone reminder disappears only after Firebase confirmation and server verification',configuration:'Firebase configuration failure shows its safe code and preserves resend cooldown','rate-limit':'phone API rate limit preserves the full Retry-After and does not call Firebase','sms-region':'Firebase SMS region rejection shows a safe support code after reCAPTCHA fallback','sms-sent':'Thai local number reaches Firebase as E.164 and successful SMS reveals six code inputs without bypassing cooldown'}[scenario],async({page})=>{
-  const rateLimited=scenario==='rate-limit',smsRejected=scenario==='sms-region',smsSent=scenario==='sms-sent'||scenario==='sms-verified';
+for(const scenario of ['configuration','rate-limit','sms-region','sms-sent','sms-verified','sms-unavailable'] as const)test({'sms-unavailable':'Duplicate phone rejection clears the consumed proof, preserves cooldown and cannot pass the phone gate','sms-verified':'Optional phone reminder disappears only after Firebase confirmation and server verification',configuration:'Firebase configuration failure shows its safe code and preserves resend cooldown','rate-limit':'phone API rate limit preserves the full Retry-After and does not call Firebase','sms-region':'Firebase SMS region rejection shows a safe support code after reCAPTCHA fallback','sms-sent':'Thai local number reaches Firebase as E.164 and successful SMS reveals six code inputs without bypassing cooldown'}[scenario],async({page})=>{
+  const rateLimited=scenario==='rate-limit',smsRejected=scenario==='sms-region',confirmSms=scenario==='sms-verified'||scenario==='sms-unavailable',smsSent=scenario==='sms-sent'||confirmSms;
   let verified=false;
   let starts=0,params=0,sms=0;
   const unexpected:string[]=[];
@@ -72,13 +72,13 @@ for(const scenario of ['configuration','rate-limit','sms-region','sms-sent','sms
         if(smsSent)return route.fulfill({headers,json:{sessionInfo:'synthetic-session-info'}});
         if(smsRejected)return route.fulfill({status:400,headers,json:{error:{code:400,message:'OPERATION_NOT_ALLOWED : SMS unable to be sent until this region enabled by the app developer. private-provider-detail-token'}}});
       }
-      if(scenario==='sms-verified'&&path==='/v1/accounts:signInWithPhoneNumber'){
+      if(confirmSms&&path==='/v1/accounts:signInWithPhoneNumber'){
         expect(route.request().postDataJSON().code).toBe('012345');
         const encode=(value:unknown)=>Buffer.from(JSON.stringify(value)).toString('base64url');
         const stamp=Math.floor(Date.now()/1000),token=`${encode({alg:'RS256'})}.${encode({sub:'synthetic-uid',iat:stamp,exp:stamp+3600,auth_time:stamp,phone_number:'+66812345678',firebase:{sign_in_provider:'phone'}})}.synthetic-signature`;
         return route.fulfill({headers,json:{localId:'synthetic-uid',idToken:token,refreshToken:'synthetic-refresh',expiresIn:'3600',phoneNumber:'+66812345678'}});
       }
-      if(scenario==='sms-verified'&&path==='/v1/accounts:lookup')return route.fulfill({headers,json:{users:[{localId:'synthetic-uid',phoneNumber:'+66812345678',providerUserInfo:[{providerId:'phone',rawId:'+66812345678',phoneNumber:'+66812345678'}]}]}});
+      if(confirmSms&&path==='/v1/accounts:lookup')return route.fulfill({headers,json:{users:[{localId:'synthetic-uid',phoneNumber:'+66812345678',providerUserInfo:[{providerId:'phone',rawId:'+66812345678',phoneNumber:'+66812345678'}]}]}});
       unexpected.push(path);return route.abort();
     }
     if(url.hostname==='www.google.com'&&path==='/recaptcha/api.js'){
@@ -107,6 +107,7 @@ for(const scenario of ['configuration','rate-limit','sms-region','sms-sent','sms
       expect(route.request().headers()['x-csrf-token']).toBe('test-csrf');
       expect(route.request().postDataJSON().challengeId).toBe('synthetic-phone-challenge');
       expect(route.request().postDataJSON().idToken).toContain('.synthetic-signature');
+      if(scenario==='sms-unavailable')return route.fulfill({status:409,json:{error:'ไม่สามารถยืนยันหรือผูกเบอร์นี้ได้ หากเคยผูกแล้วให้ใช้บัญชีเดิม หรือติดต่อผู้ดูแล',code:'PHONE_UNAVAILABLE'}});
       verified=true;return route.fulfill({json:{ok:true}});
     }
     return route.fulfill({json:{sessions:[]}});
@@ -129,12 +130,21 @@ for(const scenario of ['configuration','rate-limit','sms-region','sms-sent','sms
   expect(seconds).toBeGreaterThan(rateLimited?570:30);expect(seconds).toBeLessThanOrEqual(rateLimited?600:60);
   await expect(page.locator('body')).not.toContainText('private-provider-detail-token');
   await expect(page.getByRole('status').filter({hasText:'ส่ง SMS แล้ว'})).toHaveCount(smsSent?1:0);
-  if(scenario==='sms-verified'){
+  if(confirmSms){
     const digits=page.locator('.otp-digits input');for(let i=0;i<6;i++)await digits.nth(i).fill('012345'[i]);
     await page.getByRole('button',{name:'ยืนยันเบอร์มือถือ',exact:true}).click();
-    await expect(page.getByText('ยืนยันเบอร์แล้ว · ใช้สำหรับยืนยันเบอร์ครั้งแรก ไม่ใช้แทน MFA')).toBeVisible();
-    await expect(page.getByRole('status').filter({hasText:'บัญชีนี้ยังไม่ได้ยืนยันเบอร์มือถือ'})).toHaveCount(0);
-    expect(verified).toBe(true);
+    if(scenario==='sms-unavailable'){
+      await expect(page.getByRole('alert')).toContainText('หากเคยผูกแล้วให้ใช้บัญชีเดิม');
+      await expect(page.getByRole('heading',{name:'ยืนยันเบอร์มือถือครั้งแรก'})).toBeVisible();
+      await expect(page.locator('.otp-digits input')).toHaveCount(0);
+      await expect(page.getByRole('button',{name:/ส่งใหม่ได้ใน/})).toBeDisabled();
+      await expect(page.getByText(/เบอร์มือถือหนึ่งเบอร์ผูกได้เพียงหนึ่งบัญชี/)).toBeVisible();
+      expect(verified).toBe(false);
+    }else{
+      await expect(page.getByText('ยืนยันเบอร์แล้ว · ใช้สำหรับยืนยันเบอร์ครั้งแรก ไม่ใช้แทน MFA')).toBeVisible();
+      await expect(page.getByRole('status').filter({hasText:'บัญชีนี้ยังไม่ได้ยืนยันเบอร์มือถือ'})).toHaveCount(0);
+      expect(verified).toBe(true);
+    }
   }
   expect(starts).toBe(1);expect(params).toBe(rateLimited?0:1);expect(sms).toBe(smsRejected||smsSent?1:0);expect(unexpected).toEqual([]);
 });
