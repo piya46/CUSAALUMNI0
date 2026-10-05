@@ -7,13 +7,13 @@ import { lineReference } from '../services/lineMessages.js';
 import { failure, promote, OtpCooldownError, type AuthAudit } from './authModel.js';
 import { createFactorChallenge, factorChallenge, factorFingerprint, lockFactorSession, type FactorRow } from './factorModel.js';
 
-export async function lineLinkStart(sessionId:string,record:AuthAudit){
+export async function lineLinkStart(sessionId:string,record:AuthAudit,returnTo?:string){
   requireLine();return transaction(async conn=>{
     const s=await lockFactorSession(sessionId,conn,'manage');
     const [linked]=await query('SELECT user_id FROM line_identities WHERE user_id=?',[s.user_id],conn);
     if(linked)throw new HttpError(409,'ผูก LINE แล้ว ให้ถอดการผูกเดิมก่อน','LINE_ALREADY_LINKED');
     const nonce=randomToken(),verifier=randomToken(48),state=randomToken();
-    const id=await createFactorChallenge(sessionId,'line_link',{nonce,verifier,stateHash:hashToken(state),factor:factorFingerprint(s)},conn);
+    const id=await createFactorChallenge(sessionId,'line_link',{nonce,verifier,returnTo,stateHash:hashToken(state),factor:factorFingerprint(s)},conn);
     await record(conn,'mfa.line.link.started',s.user_id);
     return {url:lineLoginUrl(`${id}.${state}`,nonce,verifier)};
   });
@@ -35,6 +35,7 @@ export async function lineLinkFinish(sessionId:string,state:string,code:string,r
     await execute('INSERT INTO line_identities(user_id,subject_hash,subject_encrypted) VALUES (?,?,?)',[s.user_id,hashToken(`line:${subject}`),seal(subject)],conn);
     await record(conn,'mfa.line.linked',s.user_id);
   });
+  return saved.returnTo as string|undefined;
 }
 export async function unlinkLine(sessionId:string,record:AuthAudit){
   await transaction(async conn=>{

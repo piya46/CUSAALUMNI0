@@ -48,7 +48,7 @@ export async function checkDeployment(config: Settings, root: string, nodeVersio
   const publicFiles = await readdir(join(root, 'public')).catch(() => null);
   add('DOCUMENT_ROOT', Boolean(publicFiles && publicFiles.every(name => name === '.gitkeep')), 'Plesk Document Root must use the empty public directory.');
   const migrations: string[] = await readdir(join(root, 'server/migrations')).catch(() => []);
-  add('MIGRATION_FILES', migrations.includes('004_security_hardening.sql') && migrations.includes('005_mfa_reset_evidence.sql') && migrations.includes('006_additional_factors.sql') && migrations.includes('007_waiting_room.sql') && migrations.includes('008_service_consent.sql'), 'Include migrations through 008; this does not check the database migration state.');
+  add('MIGRATION_FILES', migrations.includes('004_security_hardening.sql') && migrations.includes('005_mfa_reset_evidence.sql') && migrations.includes('006_additional_factors.sql') && migrations.includes('007_waiting_room.sql') && migrations.includes('008_service_consent.sql') && migrations.includes('009_service_accounts.sql'), 'Include migrations through 009; this does not check the database migration state.');
   const envFile = await lstat(join(root, '.env')).catch(() => undefined);
   if (envFile && process.platform !== 'win32') add('ENV_FILE_MODE', envFile.isFile() && (envFile.mode & 0o077) === 0, 'The private .env file must not be group/world readable.');
 

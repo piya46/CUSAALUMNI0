@@ -7,6 +7,8 @@ import { createConsentModel } from './consentModel.js';
 import { config } from '../config.js';
 import { normalizePhone, scopesWithin } from '../services/claimScopes.js';
 import { SsoModelError } from '../services/ssoErrors.js';
+import { serviceRequirementsSql } from '../services/servicePolicy.js';
+import { enrollmentContext } from './servicePolicyModel.js';
 export { SsoModelError, type SsoErrorCode } from '../services/ssoErrors.js';
 
 export interface SsoDatabase {
@@ -15,7 +17,7 @@ export interface SsoDatabase {
   transaction<T>(fn: (connection: PoolConnection) => Promise<T>): Promise<T>;
 }
 
-export interface Application { id: string; name: string; redirectUri: string; allowedScope: string }
+export interface Application { id: string; name: string; redirectUri: string; allowedScope: string; requiredScope?: string; registration?:string }
 export interface AuthorizationRequest {
   applicationId: string; sessionId: string; userId: string; redirectUri: string; challenge: string;
 }
@@ -76,18 +78,18 @@ const liveTokenSelect = `
     FROM access_tokens t
     JOIN sessions s ON s.id = t.session_id AND s.user_id = t.user_id
     JOIN users u ON u.id = t.user_id
-    JOIN allowed_emails e ON e.email = u.email
+    JOIN sso_login_accounts e ON e.email = u.email
     JOIN applications a ON a.id = t.application_id
     JOIN sso_consents consent ON consent.id=t.consent_id AND consent.application_id=t.application_id
       AND consent.user_id=t.user_id AND consent.session_id=t.session_id AND consent.revoked_at IS NULL
       AND consent.decided_at IS NOT NULL AND consent.granted_scope=t.scope AND consent.policy_version=a.sharing_version
     LEFT JOIN phone_identities p ON p.user_id=u.id
     LEFT JOIN line_identities l ON l.user_id=u.id
-    JOIN application_memberships m ON m.application_id=t.application_id AND m.user_id=t.user_id AND m.revoked_at IS NULL
+    JOIN application_memberships m ON m.application_id=t.application_id AND m.user_id=t.user_id AND m.revoked_at IS NULL AND m.enrollment='active'
    WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > UTC_TIMESTAMP(3)
      AND s.kind = 'full' AND s.expires_at > UTC_TIMESTAMP(3)
      AND s.authenticated_at IS NOT NULL AND u.deleted_at IS NULL AND (u.phone_required=FALSE OR EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id)) AND a.revoked_at IS NULL
-     AND ${hasAssignedRole('t.application_id', 't.user_id')}`;
+     AND ${serviceRequirementsSql()} AND ${hasAssignedRole('t.application_id', 't.user_id')}`;
 
 // Shared projection makes userinfo and introspection obey exactly the same consent.
 function profileClaims(row: TokenRow): Omit<TokenIdentity,'exp'|'scope'> {
@@ -123,9 +125,11 @@ export function createSsoModel(db: SsoDatabase = { query, execute, transaction }
 
   return {
     ...createConsentModel(db),
+    enrollmentContext,
     async getApplication(id: string): Promise<Application | null> {
       const [app] = await db.query<Application>(
-        'SELECT id, name, redirect_uri AS redirectUri, allowed_claim_scopes AS allowedScope FROM applications WHERE id = ? AND revoked_at IS NULL', [id]);
+        `SELECT a.id,a.name,a.redirect_uri AS redirectUri,a.allowed_claim_scopes AS allowedScope,
+         p.required_scopes AS requiredScope,p.registration FROM applications a JOIN application_access_policies p ON p.application_id=a.id WHERE a.id=? AND a.revoked_at IS NULL`, [id]);
       return app ?? null;
     },
 
@@ -151,13 +155,13 @@ export function createSsoModel(db: SsoDatabase = { query, execute, transaction }
               AND consent.decided_at IS NOT NULL AND consent.granted_scope IS NOT NULL AND consent.policy_version=a.sharing_version
             JOIN sessions s ON s.id = c.session_id AND s.user_id = c.user_id
             JOIN users u ON u.id = c.user_id
-            JOIN allowed_emails e ON e.email = u.email
-            JOIN application_memberships m ON m.application_id=c.application_id AND m.user_id=u.id AND m.revoked_at IS NULL
+            JOIN sso_login_accounts e ON e.email = u.email
+            JOIN application_memberships m ON m.application_id=c.application_id AND m.user_id=u.id AND m.revoked_at IS NULL AND m.enrollment='active'
            WHERE c.code_hash = ? AND c.application_id = ?
              AND c.consumed_at IS NULL AND c.expires_at > UTC_TIMESTAMP(3)
              AND s.kind = 'full' AND s.authenticated_at IS NOT NULL
              AND s.expires_at > UTC_TIMESTAMP(3) AND u.deleted_at IS NULL AND (u.phone_required=FALSE OR EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id))
-             AND ${hasAssignedRole('c.application_id', 'c.user_id')}
+             AND ${serviceRequirementsSql()} AND ${hasAssignedRole('c.application_id', 'c.user_id')}
            FOR UPDATE`, [input.codeHash, key.applicationId], connection);
         if (!code || !scopesWithin(code.scope,code.allowedScope) || code.redirectUri !== input.redirectUri || key.redirectUri !== input.redirectUri
           || !/^[A-Za-z0-9._~-]{43,128}$/.test(input.verifier)

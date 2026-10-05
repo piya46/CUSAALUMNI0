@@ -23,6 +23,7 @@ async function user(){
 async function service(u:Awaited<ReturnType<typeof user>>){
   const id=randomUUID(),role=randomUUID(),key='cusa_'+randomToken(),redirectUri='https://synthetic.example.test/callback',verifier=randomToken();apps.push(id);
   await execute('INSERT INTO applications(id,name,redirect_uri) VALUES (?,?,?)',[id,'Synthetic service',redirectUri]);
+      await execute('INSERT INTO application_access_policies(application_id) VALUES (?)',[id]);
   await execute('INSERT INTO application_roles(id,application_id,code,name) VALUES (?,?,?,?)',[role,id,'member','Member']);
   await execute('INSERT INTO application_memberships(application_id,user_id) VALUES (?,?)',[id,u.userId]);
   await execute('INSERT INTO application_member_roles(application_id,user_id,role_id) VALUES (?,?,?)',[id,u.userId,role]);

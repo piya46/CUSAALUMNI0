@@ -68,7 +68,7 @@ export const applicationSchema = z.object({
 export const apiKeySchema = z.object({
   applicationId: idSchema,
   name: labelSchema,
-  scopes: z.array(z.enum(['identity:read', 'token:introspect', 'token:revoke'])).min(1).max(3)
+  scopes: z.array(z.enum(['identity:read', 'token:introspect', 'token:revoke', 'member:activity'])).min(1).max(3)
     .refine(scopes => new Set(scopes).size === scopes.length, 'Scopes must be unique.'),
   expiresInDays: z.union([z.literal(30), z.literal(60), z.literal(90), z.literal(365)]),
 }).strict();

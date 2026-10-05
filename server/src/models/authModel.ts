@@ -6,10 +6,11 @@ import { config } from '../config.js';
 import { hashToken, randomToken, otpHash, verifyOtpHash, seal, unseal } from '../services/crypto.js';
 import { totpStep } from '../services/totp.js';
 import type { Identity } from '../types.js';
+import { prepareMembership } from './servicePolicyModel.js';
 
 type Row = Record<string, any>;
 export type AuthAudit=(conn:PoolConnection,event:string,target?:string,metadata?:unknown)=>Promise<void>;
-const sessionSelect = `SELECT s.*, u.email,COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.name) AS name,u.first_name,u.last_name,u.avatar,u.totp_secret,u.phone_required,EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id) AS phone_verified,a.role FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL`;
+const sessionSelect = `SELECT s.*, u.email,COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.name) AS name,u.first_name,u.last_name,u.avatar,u.totp_secret,u.phone_required,EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id) AS phone_verified,a.role FROM sessions s JOIN users u ON u.id=s.user_id JOIN sso_login_accounts a ON a.email=u.email WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL`;
 export async function findSession(token: string): Promise<Identity | undefined> {
   const [s] = await query<Row>(sessionSelect, [hashToken(token)]);
   return s && { sessionId: s.id, userId: s.user_id, email: s.email, name: s.name, firstName: s.first_name, lastName: s.last_name, avatar: s.avatar, role: s.role, kind: s.kind, csrfToken: s.csrf_token, phoneRequired: Boolean(s.phone_required && !s.phone_verified), totpEnabled: Boolean(s.totp_secret), mfaMethod: s.mfa_method, authenticatedAt: s.authenticated_at };
@@ -45,18 +46,23 @@ export async function takeFlow(state: string, browser: string) {
 export async function startGoogleSession(profile: { sub: string; email: string; name: string; avatar: string | null; firstName?: string; lastName?: string; applicationId?:string }, oldToken?: string,record?:(conn:PoolConnection,userId:string,sessionId:string)=>Promise<void>) {
   return transaction(async conn => {
     const [allowed] = await query<Row>('SELECT id FROM allowed_emails WHERE email=? FOR UPDATE', [profile.email], conn);
-    if (!allowed) return null;
     let [user] = await query<Row>('SELECT * FROM users WHERE google_sub=? FOR UPDATE', [profile.sub], conn);
     if (user?.deleted_at) return null;
+    // Removing an internal allowlist entry must never turn that account into a
+    // public service account. External sign-in always starts at a registered app.
+    if(user?.account_type==='internal'&&!allowed)return null;
+    if(!allowed&&!profile.applicationId)return null;
+    if(user?.account_type==='service'&&!profile.applicationId)return null;
     const [collision] = await query<Row>('SELECT id FROM users WHERE email=? AND google_sub<>?', [profile.email,profile.sub], conn);
     if (collision) return null;
     if (!user) {
-      user = { id: randomUUID() };
-      await execute('INSERT INTO users (id,google_sub,email,name,avatar,first_name,last_name,phone_required) VALUES (?,?,?,?,?,?,?,?)', [user.id,profile.sub,profile.email,profile.name,profile.avatar,profile.firstName ?? '',profile.lastName ?? '',config.firebasePhoneRequired], conn);
+      user = { id: randomUUID(),account_type:allowed?'internal':'service' };
+      await execute('INSERT INTO users (id,google_sub,email,name,avatar,first_name,last_name,phone_required,account_type) VALUES (?,?,?,?,?,?,?,?,?)', [user.id,profile.sub,profile.email,profile.name,profile.avatar,profile.firstName ?? '',profile.lastName ?? '',config.firebasePhoneRequired,user.account_type], conn);
     } else {
       if (user.email !== profile.email) await execute('DELETE FROM sessions WHERE user_id=?', [user.id], conn);
       await execute('UPDATE users SET email=?,name=?,avatar=? WHERE id=?', [profile.email,profile.name,profile.avatar,user.id], conn);
     }
+    if(user.account_type==='service')await prepareMembership(profile.applicationId!,user.id,profile.email,conn);
     if (oldToken) await execute('DELETE FROM sessions WHERE token_hash=?', [hashToken(oldToken)], conn);
     // Bound abandoned browser sessions without extending any existing session.
     await execute('DELETE FROM sessions WHERE user_id=? AND (kind=\'pending\' OR expires_at<=UTC_TIMESTAMP(3))', [user.id], conn);
@@ -84,7 +90,7 @@ export async function createOtp(sessionId: string, code: string,record?:AuthAudi
   return transaction(async conn => {
     const [s] = await query<Row>(`SELECT s.id,u.id AS userId,
       GREATEST(0, LEAST(60, CEIL(60 - TIMESTAMPDIFF(MICROSECOND,u.otp_sent_at,UTC_TIMESTAMP(3))/1000000))) AS retryAfter
-      FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email
+      FROM sessions s JOIN users u ON u.id=s.user_id JOIN sso_login_accounts a ON a.email=u.email
       WHERE s.id=? AND s.kind='pending' AND s.expires_at>UTC_TIMESTAMP(3)
       AND u.deleted_at IS NULL AND u.totp_secret IS NULL
       AND (u.mfa_locked_until IS NULL OR u.mfa_locked_until<=UTC_TIMESTAMP(3)) FOR UPDATE`, [sessionId], conn);
@@ -121,7 +127,7 @@ export async function isMfaLocked(userId:string) {
 }
 export async function verifyEmailOtp(sessionId: string, code: string,record?:AuthAudit,reference?:string): Promise<string | null> {
   return transaction(async conn => {
-    const [s] = await query<Row>('SELECT s.*,u.totp_secret FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.id=? AND s.kind=\'pending\' AND s.expires_at>UTC_TIMESTAMP(3) FOR UPDATE', [sessionId], conn);
+    const [s] = await query<Row>('SELECT s.*,u.totp_secret FROM sessions s JOIN users u ON u.id=s.user_id JOIN sso_login_accounts a ON a.email=u.email WHERE s.id=? AND s.kind=\'pending\' AND s.expires_at>UTC_TIMESTAMP(3) FOR UPDATE', [sessionId], conn);
     if (!s || s.totp_secret) return null;
     if (await locked(s.user_id,conn)) return null;
     const [challenge] = await query<Row>('SELECT * FROM otp_challenges WHERE session_id=? AND consumed_at IS NULL AND expires_at>UTC_TIMESTAMP(3) AND attempts<5 FOR UPDATE', [sessionId], conn);
@@ -134,7 +140,7 @@ export async function verifyEmailOtp(sessionId: string, code: string,record?:Aut
 }
 export async function verifyTotp(sessionId: string, code: string, action: 'login' | 'disable' | 'reauth',record?:AuthAudit): Promise<string | boolean | null> {
   return transaction(async conn => {
-    const [s] = await query<Row>('SELECT s.*,u.email,u.totp_secret,u.totp_last_step FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.id=? AND s.expires_at>UTC_TIMESTAMP(3) FOR UPDATE', [sessionId], conn);
+    const [s] = await query<Row>('SELECT s.*,u.email,u.totp_secret,u.totp_last_step FROM sessions s JOIN users u ON u.id=s.user_id JOIN sso_login_accounts a ON a.email=u.email WHERE s.id=? AND s.expires_at>UTC_TIMESTAMP(3) FOR UPDATE', [sessionId], conn);
     if (!s?.totp_secret || s.kind !== (action === 'login' ? 'pending' : 'full')) return null;
     if (await locked(s.user_id,conn)) return null;
     const step = totpStep(s.email,unseal(s.totp_secret),code);
@@ -168,7 +174,7 @@ export async function saveEnrollment(sessionId: string, secret: string, codes: s
 }
 export async function enableTotp(sessionId: string, code: string,record?:AuthAudit) {
   return transaction(async conn => {
-    const [s] = await query<Row>('SELECT s.*,u.email,u.totp_secret FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.id=? AND s.kind=\'full\' AND s.expires_at>UTC_TIMESTAMP(3) FOR UPDATE', [sessionId], conn);
+    const [s] = await query<Row>('SELECT s.*,u.email,u.totp_secret FROM sessions s JOIN users u ON u.id=s.user_id JOIN sso_login_accounts a ON a.email=u.email WHERE s.id=? AND s.kind=\'full\' AND s.expires_at>UTC_TIMESTAMP(3) FOR UPDATE', [sessionId], conn);
     if (!s || (s.totp_secret && s.mfa_method !== 'recovery')) return false;
     if (await locked(s.user_id,conn)) return false;
     const [enroll] = await query<Row>('SELECT * FROM mfa_enrollments WHERE session_id=? AND expires_at>UTC_TIMESTAMP(3) FOR UPDATE', [sessionId], conn);
@@ -215,7 +221,7 @@ export async function recoveryCodesRemaining(userId: string) {
 }
 export async function verifyRecovery(sessionId: string, code: string,record?:AuthAudit) {
   return transaction(async conn => {
-    const [s] = await query<Row>('SELECT s.*,u.totp_secret FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.id=? AND s.kind=\'pending\' AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL FOR UPDATE',[sessionId],conn);
+    const [s] = await query<Row>('SELECT s.*,u.totp_secret FROM sessions s JOIN users u ON u.id=s.user_id JOIN sso_login_accounts a ON a.email=u.email WHERE s.id=? AND s.kind=\'pending\' AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL FOR UPDATE',[sessionId],conn);
     if (!s?.totp_secret) return null;
     if (await locked(s.user_id,conn)) return null;
     const result = await execute('UPDATE mfa_recovery_codes SET used_at=UTC_TIMESTAMP(3) WHERE user_id=? AND code_hash=? AND used_at IS NULL',[s.user_id,hashToken(code)],conn);
@@ -225,7 +231,7 @@ export async function verifyRecovery(sessionId: string, code: string,record?:Aut
 }
 export async function regenerateRecovery(sessionId: string, code: string,record?:AuthAudit) {
   return transaction(async conn => {
-    const [s] = await query<Row>('SELECT s.*,u.email,u.totp_secret,u.totp_last_step FROM sessions s JOIN users u ON u.id=s.user_id JOIN allowed_emails a ON a.email=u.email WHERE s.id=? AND s.kind=\'full\' AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL FOR UPDATE',[sessionId],conn);
+    const [s] = await query<Row>('SELECT s.*,u.email,u.totp_secret,u.totp_last_step FROM sessions s JOIN users u ON u.id=s.user_id JOIN sso_login_accounts a ON a.email=u.email WHERE s.id=? AND s.kind=\'full\' AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL FOR UPDATE',[sessionId],conn);
     if (!s?.totp_secret) return null;
     if (await locked(s.user_id,conn)) return null;
     const step = totpStep(s.email,unseal(s.totp_secret),code);

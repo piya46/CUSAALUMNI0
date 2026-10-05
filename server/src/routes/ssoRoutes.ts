@@ -5,6 +5,7 @@ import { rateLimit, requireAuth } from '../middleware/security.js';
 import { requireService } from '../middleware/serviceSecurity.js';
 import { authorizeQueueGate } from '../controllers/waitingRoomController.js';
 import { revokeServiceSession } from '../controllers/serviceRevocationController.js';
+import * as policy from '../controllers/servicePolicyController.js';
 
 export const ssoRouter = Router();
 
@@ -14,6 +15,9 @@ ssoRouter.get('/authorize', rateLimit('sso-authorize', 40, 60), authorizeQueueGa
 ssoRouter.get('/consent',requireAuth,rateLimit('sso-consent-view',40,60),ssoController.consentContext);
 ssoRouter.post('/consent',requireAuth,rateLimit('sso-consent-decision',20,60),ssoController.consentDecision);
 ssoRouter.get('/consents',requireAuth,ssoController.consents);
+ssoRouter.get('/enrollment',requireAuth,rateLimit('sso-enrollment',30,60),policy.enrollment);
+ssoRouter.post('/enrollment',requireAuth,rateLimit('sso-enrollment',10,60),policy.enroll);
+ssoRouter.post('/activity',requireService('member:activity'),policy.activity);
 ssoRouter.delete('/consents/:id',requireAuth,rateLimit('sso-consent-revoke',20,60),ssoController.revokeConsent);
 ssoRouter.post('/phone-match',requireService('identity:read'),ssoController.matchPhone);
 // These two machine-to-machine endpoints authenticate through application-bound API keys.

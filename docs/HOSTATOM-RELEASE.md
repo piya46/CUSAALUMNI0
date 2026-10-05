@@ -1,6 +1,8 @@
 # อัปโหลด CUSA SSO รุ่นนี้บน HostAtom / Plesk
 
-รุ่นนี้ต้อง migrate ถึง `008_service_consent.sql` ก่อน Restart: เพิ่ม policy ใน `applications`, ตาราง `sso_consents` และ `consent_id` ใน code/token ให้สิทธิ์ SELECT/INSERT/UPDATE/DELETE ตาราง `sso_consents` แก่ runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) ไม่เพิ่มค่า .env
+รุ่นนี้ต้อง migrate ถึง `009_service_accounts.sql` ก่อน Restart และไม่เพิ่มค่า `.env` หากยังไม่ได้ใช้ migration 008 ระบบจะเพิ่ม policy ใน `applications`, ตาราง `sso_consents` และ `consent_id` ใน code/token ด้วย ให้สิทธิ์ runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) ครบทั้งสองรุ่น
+
+Migration 009 เพิ่มประเภทบัญชี นโยบายสมาชิก คำเชิญ และข้อมูลกิจกรรมแยก Service รวมถึง View `sso_login_accounts` ต้องให้บัญชี migration สร้าง View ได้ และให้ runtime SELECT บน View + สิทธิ์ตารางใหม่ตาม runtime-grants.sql ก่อน Restart ดู [ขั้นตอนตั้งนโยบาย](SERVICE-ACCESS.md#ตั้งนโยบายรับสมาชิก) ค่าเริ่มต้นปิดรับสมัคร และงานจัดการบัญชีไม่ใช้งานเป็น preview เท่านั้น ไม่มีการลบอัตโนมัติ
 
 Code/token เก่าที่ไม่มี Consent จะใช้ไม่ได้หลังอัปเดต ให้ระบบลูกเริ่ม login ใหม่เพื่อเลือกข้อมูลที่แชร์ CUSA session เดิมยังใช้ได้ ดู [คู่มือ Consent และข้อมูลระบบลูก](SSO-INTEGRATION.md) Admin เปิดข้อมูลเพิ่มที่ **แอปพลิเคชัน → ตั้งค่าข้อมูลและ Consent** ห้าม rollback ไป build ที่ไม่มี Consent gate
 
@@ -37,7 +39,7 @@ Node ต้องรองรับอย่างน้อย 22.12 เลื�
 3. ติดตั้ง dependencies ด้วย Node/npm ของ Plesk: `npm ci --omit=dev` เพราะ ZIP มี build แล้ว หากอัปโหลด source โดยไม่มี build ให้ใช้ `npm ci --include=dev` แล้ว `npm run build` ตามคู่มือเดิม ไม่คัดลอก node_modules จาก macOS
 4. ตรวจ `.env` ของ Host: NODE_ENV=production, HTTPS APP_ORIGIN หนึ่งค่า, INSTALL_ENABLED=false และ INSTALL_TOKEN ว่าง DB_HOST=localhost/127.0.0.1 กับ DB_TLS=false ใช้ได้เฉพาะเมื่อ Node และ MariaDB อยู่เครื่องเดียวกันตามข้อมูล Host เท่านั้น ห้ามใช้ public IP กับ DB_TLS=false ใน production
 5. ใน **Node.js → Run script** เลือก `deploy:check` หรือรัน `npm run deploy:check` จาก Terminal เป็นการตรวจไฟล์และค่าตั้งต้นแบบ offline; ไม่รัน SQL, ไม่ทดสอบ Google/Gmail และไม่แก้ `.env` Exit code 1 หมายถึงมีรายการ fail ที่ต้องแก้ตามชื่อ check
-6. ใช้บัญชี migration ที่มีสิทธิ์ DDL รัน `npm run db:migrate:production` จาก Application Root เพื่อเพิ่ม migrations ที่ยังไม่มี รวม 004/005 ห้ามแก้ checksum หรือไฟล์ migration ที่เคยใช้แล้ว ไม่รัน bootstrap ซ้ำสำหรับระบบเดิม
+6. ใช้บัญชี migration ที่มีสิทธิ์ DDL และ CREATE VIEW รัน `npm run db:migrate:production` จาก Application Root เพื่อเพิ่ม migrations ที่ยังไม่มีจนถึง 009 ห้ามแก้ checksum หรือไฟล์ migration ที่เคยใช้แล้ว ไม่รัน bootstrap ซ้ำสำหรับระบบเดิม
 7. เปลี่ยนกลับเป็นบัญชี runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) แล้วรัน `npm run ops:check` ต้องไม่มี excessive grants, timezone ผิด, backlog หรือหลักฐานเกินกำหนด หาก Host ไม่ให้ตั้ง table grants ให้ HostAtom จัดสิทธิ์ให้ตามไฟล์นี้ก่อนยืนยันว่า audit เป็น append-only ในระดับ DB
 8. Restart App แล้วตรวจ `/api/ready` ผ่าน HTTPS, Google Login/OTP/Ref/TOTP และ Service callback ด้วยบัญชีทดสอบที่ได้รับอนุญาต การตรวจ offline ผ่านไม่ยืนยันว่าขั้นตอนเหล่านี้ทำงานบน Host แล้ว
 9. เปิดงานเบื้องหลังใน Node ตามหัวข้อถัดไป ตรวจ log การทำงานก่อนเปิดรับภาพจริง ยืนยันว่าไฟล์ใน MFA_EVIDENCE_DIR คงอยู่ข้าม restart/deploy และไม่อยู่ใต้ Document Root ของเว็บไซต์อื่นด้วย

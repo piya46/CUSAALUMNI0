@@ -94,6 +94,7 @@ test('capacity/IP quotas bound Redis state without joining a new ticket on refre
 test('HTTP rejects queue bypass, cross-origin joins, stale admin MFA and policy audit failure', {skip:!enabled},async()=>{
   const app=appFixture(),owner=await user(),admin=await user('admin'),web=createApp(),path=returnTo(app);
   await execute('INSERT INTO applications(id,name,redirect_uri,queue_enabled,queue_rate) VALUES (?,?,?,?,?)',[app.id,app.name,app.redirectUri,1,100]);
+  await execute("INSERT INTO application_access_policies(application_id,minimum_mfa) VALUES (?,'strong')",[app.id]);
   const role=randomUUID();await execute('INSERT INTO application_roles(id,application_id,code,name) VALUES (?,?,?,?)',[role,app.id,'member','Member']);
   await execute('INSERT INTO application_memberships(application_id,user_id) VALUES (?,?)',[app.id,owner.userId]);
   await execute('INSERT INTO application_member_roles(application_id,user_id,role_id) VALUES (?,?,?)',[app.id,owner.userId,role]);
@@ -108,8 +109,13 @@ test('HTTP rejects queue bypass, cross-origin joins, stale admin MFA and policy 
   assert.equal(joined.body.status,'admitted');queueKeys(app.id,'127.0.0.1').forEach(k=>keys.add(k));
   await request(web).get(path).set('Cookie',cookie).expect(303).expect('Location',/^\/login\?/);
   assert.equal((await query('SELECT code_hash FROM authorization_codes WHERE application_id=?',[app.id])).length,0);
+  await execute("UPDATE sessions SET mfa_method='email' WHERE id=?",[owner.sessionId]);
+  await request(web).get(path).set('Cookie',`${owner.cookie}; ${cookie}`).expect(303).expect('Location',/^\/service-enrollment\?/);
+  assert.equal((await visit(app,cookie.slice(cookie.indexOf('=')+1),'check','','127.0.0.1',path)).status,'admitted');
+  await execute("UPDATE sessions SET mfa_method='totp' WHERE id=?",[owner.sessionId]);
   const granted=await request(web).get(path).set('Cookie',`${owner.cookie}; ${cookie}`).expect(303);
-  assert.equal(new URL(granted.headers.location).origin,'https://app.example.test');
+  assert.match(granted.headers.location,/^\/consent\?request=/);
+  assert.equal((await query('SELECT code_hash FROM authorization_codes WHERE application_id=?',[app.id])).length,0);
   await request(web).get(path).set('Cookie',`${owner.cookie}; ${cookie}`).expect(303).expect('Location',/^\/waiting\?/);
   const settings={enabled:false,rate:2,capacity:2000,ipLimit:10};
   await request(web).put(`/api/admin/applications/${app.id}/queue`).set('Cookie',owner.cookie).set('Origin',config.appOrigin).set('X-CSRF-Token',owner.identity.csrfToken).send(settings).expect(403);

@@ -2,7 +2,7 @@ import { api } from './api';
 
 export interface LoginContext {
   application: { name: string; origin: string };
-  returnTo: string;
+  returnTo: string; registration?:'closed'|'invite'|'open';
 }
 
 export async function getLoginContext(returnTo: string): Promise<LoginContext> {

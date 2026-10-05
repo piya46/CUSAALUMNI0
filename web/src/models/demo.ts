@@ -11,7 +11,7 @@ export function makeDemoData(): Dataset {
     { id: 'user-5', name: 'ธนภัทร กาญจนพงศ์', email: 'tanapat@example.com', role: 'user' as const, totpEnabled: true, lastLoginAt: ago(6), createdAt: ago(190) },
     { id: 'user-6', name: 'อรปรียา สุขสันต์', email: 'ornpreeya@example.com', role: 'user' as const, totpEnabled: false, lastLoginAt: ago(20), createdAt: ago(120) },
   ];
-  const emails = users.map((u, i) => ({ id: `email-${i}`, email: u.email, role: u.role, createdAt: u.createdAt }));
+  const emails = users.map((u, i) => ({ id: `email-${i}`, email: u.email, role: u.role === 'admin' ? 'admin' as const : 'user' as const, createdAt: u.createdAt }));
   emails.push({ id: 'email-pending', email: 'new.member@example.com', role: 'user', createdAt: ago(1) });
   const applications = [
     { id: 'app-1', name: 'CUSA Workspace', description: 'พื้นที่ทำงานและจัดการเอกสารของทีม', redirectUri: 'https://workspace.example.com/auth/callback', createdAt: ago(410), revokedAt: null },

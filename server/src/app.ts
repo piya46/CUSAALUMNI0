@@ -34,7 +34,7 @@ export function createApp() {
   app.use('/api',(req,res,next)=>{
     if(['/health','/ready'].includes(req.path)) return next();
     if(req.path==='/auth/line/webhook')return webhookLimit(req,res,next);
-    return ['/sso/token','/sso/introspect','/sso/revoke'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
+    return ['/sso/token','/sso/introspect','/sso/revoke','/sso/activity'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
   });
   app.post('/api/auth/line/webhook',requireConfigured,auditAvailability,express.raw({type:'application/json',limit:'64kb'}),lineWebhook);
   app.use(express.json({limit:'16kb'}));
@@ -61,13 +61,13 @@ export function createApp() {
   app.use('/api',(_req,res)=>res.status(404).json({error:'ไม่พบ API',code:'NOT_FOUND'}));
   const webDir=fileURLToPath(new URL('../../web/dist',import.meta.url));
   app.get('/waiting',prepareQueuePage);
-  app.get('/consent',(_req,res,next)=>{res.set({'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'});next();});
+  app.get(['/consent','/service-enrollment'],(_req,res,next)=>{res.set({'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'});next();});
   app.get('/install', (_req,res,next) => {
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Robots-Tag','noindex, nofollow');
     if (!config.installEnabled) return res.status(404).type('text').send('Installer is disabled.');
     next();
   });
-  if (existsSync(webDir)) { app.use(express.static(webDir,{index:false,setHeaders:(res,file)=>res.setHeader('Cache-Control',staticCachePolicy(file,webDir))})); app.get('/{*path}',(req,res)=>{res.setHeader('Cache-Control',/^\/(install|waiting|consent)\/?$/i.test(req.path)?'no-store':'no-cache');res.sendFile(`${webDir}/index.html`);}); }
+  if (existsSync(webDir)) { app.use(express.static(webDir,{index:false,setHeaders:(res,file)=>res.setHeader('Cache-Control',staticCachePolicy(file,webDir))})); app.get('/{*path}',(req,res)=>{res.setHeader('Cache-Control',/^\/(install|waiting|consent|service-enrollment)\/?$/i.test(req.path)?'no-store':'no-cache');res.sendFile(`${webDir}/index.html`);}); }
   app.use(async (error:unknown,req:express.Request,res:express.Response,_next:express.NextFunction)=>{
     const reason=error instanceof HttpError ? error.code ?? `HTTP_${error.status}` : error instanceof z.ZodError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
     securityFailure(req,reason);

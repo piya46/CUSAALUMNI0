@@ -39,6 +39,7 @@ test('MariaDB introspection exp is the earliest session, token or API key expiry
     VALUES (?, ?, ?, 'full', ?, 'email', UTC_TIMESTAMP(3), ?)`, [sessionId, hashToken(randomToken()), userId, randomToken(), date(base + 300)]);
   await execute('INSERT INTO applications (id, name, redirect_uri) VALUES (?, ?, ?)',
     [applicationId, `Expiry fixture ${applicationId}`, 'https://expiry.example.test/callback']);
+  await execute('INSERT INTO application_access_policies(application_id) VALUES (?)',[applicationId]);
   await execute('INSERT INTO application_memberships (application_id,user_id) VALUES (?,?)', [applicationId,userId]);
   const roleId=randomUUID();
   await execute('INSERT INTO application_roles (id,application_id,code,name) VALUES (?,?,?,?)', [roleId,applicationId,'viewer','Viewer']);

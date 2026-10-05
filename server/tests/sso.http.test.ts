@@ -25,6 +25,7 @@ function makeApp(overrides: Partial<SsoModel> = {}, actor?: Identity) {
   const model: SsoModel = {
     getApplication: async () => ({ id: appId, name: 'People Portal', redirectUri,allowedScope:'identity:read profile email' }),
     isRegisteredOrigin: async origin => origin === 'https://portal.example.com',
+    enrollmentContext: async()=>({ready:true,application:{id:appId,name:'People Portal'},requirements:{phone:false,line:false,minimumMfa:'standard'},missing:[],enrolled:true,blocked:false,registration:'closed',policyVersion:1,pendingDays:14,inactiveDays:null,noticeDays:30,lifecycleMode:'preview',totpEnabled:true}),
     beginAuthorization: async () => code,
     exchangeAuthorizationCode: async () => ({ accessToken: 'new-access-token', expiresIn: 300,scope:'identity:read profile email' }),
     introspectToken: async () => ({ active: false }),

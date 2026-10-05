@@ -52,7 +52,7 @@ export async function requireUnlocked(req:Request,_res:Response,next:NextFunctio
 }
 export function csrfProtection(req: Request, _res: Response, next: NextFunction) {
   if (['GET','HEAD','OPTIONS'].includes(req.method)) return next();
-  if (['/sso/token','/sso/introspect','/sso/revoke','/sso/phone-match'].includes(req.path)) return next();
+  if (['/sso/token','/sso/introspect','/sso/revoke','/sso/phone-match','/sso/activity'].includes(req.path)) return next();
   const token = req.get('X-CSRF-Token');
   if (req.get('Origin') !== config.appOrigin || !req.identity || !token || !safeEqual(token,req.identity.csrfToken)) throw new HttpError(403, 'คำขอไม่ผ่านการตรวจสอบ CSRF', 'CSRF_REJECTED');
   next();

@@ -25,6 +25,7 @@ test('MariaDB consent, disclosure, phone comparison and policy changes remain ac
     for(const id of [session,otherSession])await execute("INSERT INTO sessions(id,token_hash,user_id,kind,csrf_token,mfa_method,authenticated_at,expires_at) VALUES (?,?,?,'full',?,'totp',UTC_TIMESTAMP(3),DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))",[id,hashToken(randomToken()),user,randomToken()]);
     for(const [id,hash] of [[app,key],[otherApp,otherKey]]){
       await execute('INSERT INTO applications(id,name,redirect_uri,allowed_claim_scopes) VALUES (?,?,?,?)',[id,'Test Service',redirectUri,all]);
+      await execute('INSERT INTO application_access_policies(application_id) VALUES (?)',[id]);
       await execute('INSERT INTO api_keys(id,application_id,name,prefix,key_hash,scopes,expires_at) VALUES (?,?,?,?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',[randomUUID(),id,'Test','test',hash,JSON.stringify(['identity:read','token:introspect'])]);
       await execute('INSERT INTO application_memberships(application_id,user_id,department) VALUES (?,?,?)',[id,user,'Science']);
       const role=randomUUID();await execute('INSERT INTO application_roles(id,application_id,code,name) VALUES (?,?,?,?)',[role,id,'viewer','Viewer']);

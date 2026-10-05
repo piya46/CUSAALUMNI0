@@ -39,3 +39,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`factor_challenges` TO
 
 -- Service consent (migration 008).
 GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`sso_consents` TO 'cusa_runtime'@'localhost';
+
+-- Service account separation and policies (migration 009).
+GRANT SELECT ON `scicualu_alumni`.`sso_login_accounts` TO 'cusa_runtime'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`application_access_policies` TO 'cusa_runtime'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`application_invitations` TO 'cusa_runtime'@'localhost';
+GRANT SELECT, INSERT, DELETE ON `scicualu_alumni`.`service_activity_receipts` TO 'cusa_runtime'@'localhost';

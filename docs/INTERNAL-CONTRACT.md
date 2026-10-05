@@ -94,3 +94,12 @@ Admin `DELETE /api/admin/users/:id/sessions` revokes credentials atomically with
 ## Service disclosure and consent (008)
 
 Every authorization requires a one-use, session-bound consent decision before code issuance. Service policy caps requested claim scopes; the selected subset is frozen on the grant/code/token and enforced by both userinfo and introspection. Profile, verified phone, LINE UID and authentication evidence are separate opt-in scopes. Phone equality has its own server-to-server scope, audience binding, five checks/token/service/minute and tri-state response; it never returns a phone number. No evidence, secrets, provider tokens or platform admin role is disclosed. Policy revisions and owner revocation invalidate old grants; existing introspection cache delay is at most five seconds. See [SSO integration](SSO-INTEGRATION.md) for field semantics, first-party CSRF endpoints, versioning and retention.
+
+
+## Service-account delta 009 (supersedes global-allowlist-only authentication)
+
+Existing users are internal; they retain allowlist enforcement. External identities have platform role service and authenticate only from a validated registered service flow. They are excluded from the internal user directory. The invoker-security sso_login_accounts view centralizes this distinction for session, MFA/reset and token checks. Explicit allowlist admission is the only promotion path to internal membership; service signup never grants platform administration.
+
+Per-service policies separate registration (closed/invite/open), required factor enrollment, minimum MFA and required disclosure scopes. Provisional membership has no roles until MFA + requirements + consent commit. Pending expiry, closed enrollment, revoked invitation/membership and unavailable default role fail closed. Service requirements are checked again during consent/code/token reads. Policy changes invalidate old grants via sharing_version. All admin changes are transactional with audit and fresh strong MFA.
+
+Lifecycle is REVIEW-ONLY in this release: per-service thresholds, preview, consent activity and scoped BFF activity reporting. No automatic user/member destruction or notification delivery is enabled. Shared identity lifetime and evidence/audit retention remain separate. See SERVICE-ACCESS.md for all routes, operational setup and limits.

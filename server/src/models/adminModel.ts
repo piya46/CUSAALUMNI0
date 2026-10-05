@@ -51,7 +51,7 @@ export async function lockAdministrators(actor: Actor, connection: PoolConnectio
     const [session]=await query<{id:string;mfa_method:string;authenticated_at:Date}>(`SELECT s.id,s.mfa_method,s.authenticated_at FROM sessions s JOIN users u ON u.id=s.user_id
       WHERE s.id=? AND s.user_id=? AND s.kind='full'
       AND s.expires_at>UTC_TIMESTAMP(3)
-      AND u.deleted_at IS NULL AND u.totp_secret IS NOT NULL FOR UPDATE`,[actor.sessionId,actor.userId],connection);
+      AND u.account_type='internal' AND u.deleted_at IS NULL AND u.totp_secret IS NOT NULL FOR UPDATE`,[actor.sessionId,actor.userId],connection);
     if(!session||!isFreshStrongMfa(session.mfa_method,session.authenticated_at))throw new HttpError(403,'กรุณายืนยัน Passkey หรือ Authenticator อีกครั้ง','MFA_REAUTH_REQUIRED');
   }
   return admins;
@@ -75,14 +75,14 @@ async function revokeUser(userId: string, connection: PoolConnection) {
   await execute('DELETE FROM sessions WHERE user_id = ?', [userId], connection);
 }
 
-export async function listUsers(options: Pagination) {
+export async function listUsers(options: Pagination,accountType:'internal'|'service'='internal') {
   const result = await paginated<{ id: string; email: string; name: string; firstName: string; lastName: string; avatar: string | null; role: Role; totpEnabled: number; lastLoginAt: Date | null; createdAt: Date }>(
     `u.id, u.email, COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.name) AS name,
       u.first_name AS firstName, u.last_name AS lastName, u.avatar, a.role, (u.totp_secret IS NOT NULL) AS totpEnabled,
       u.last_login_at AS lastLoginAt, u.created_at AS createdAt`,
-    'users u JOIN allowed_emails a ON a.email = u.email',
-    "u.deleted_at IS NULL AND (u.email LIKE ? ESCAPE '!' OR u.name LIKE ? ESCAPE '!' OR CONCAT(u.first_name, ' ', u.last_name) LIKE ? ESCAPE '!')",
-    Array(3).fill(searchPattern(options.search)), 'u.created_at DESC, u.id', options);
+    'users u JOIN sso_login_accounts a ON a.id=u.id',
+    "u.account_type=? AND u.deleted_at IS NULL AND (u.email LIKE ? ESCAPE '!' OR u.name LIKE ? ESCAPE '!' OR CONCAT(u.first_name, ' ', u.last_name) LIKE ? ESCAPE '!')",
+    [accountType,...Array(3).fill(searchPattern(options.search))], 'u.created_at DESC, u.id', options);
   return { users: result.rows.map(user => ({ ...user, totpEnabled: Boolean(user.totpEnabled) })), meta: result.meta };
 }
 
@@ -159,8 +159,12 @@ export async function addAllowedEmail(actor: Actor, data: { email: string; role:
       await lockAdministrators(actor, connection);
       const id = randomUUID();
       await execute('INSERT INTO allowed_emails (id, email, role) VALUES (?, ?, ?)', [id, data.email, data.role], connection);
+      // Only this explicit, fresh-admin operation can admit a service identity to CUSA.
+      const serviceAccounts=await query<{id:string}>("SELECT id FROM users WHERE email=? AND account_type='service' FOR UPDATE",[data.email],connection);
+      await execute("UPDATE users SET account_type='internal' WHERE email=?",[data.email],connection);
+      for(const account of serviceAccounts)await execute('DELETE FROM sessions WHERE user_id=?',[account.id],connection);
       const restored = await execute('UPDATE users SET deleted_at = NULL WHERE email = ? AND deleted_at IS NOT NULL', [data.email], connection);
-      await audit(connection, 'allowlist.created', data.email, { role: data.role, restoredUser: restored.affectedRows > 0 });
+      await audit(connection, 'allowlist.created', data.email, { role: data.role, restoredUser: restored.affectedRows > 0,admittedServiceAccounts:serviceAccounts.length });
       const [email] = await query<AllowedEmail>(`${allowlistSelect} WHERE id = ?`, [id], connection);
       return email;
     });
@@ -216,6 +220,7 @@ export async function addApplication(actor: Actor, data: { name: string; descrip
     await lockAdministrators(actor, connection);
     const id = randomUUID();
     await execute('INSERT INTO applications (id, name, description, redirect_uri) VALUES (?, ?, ?, ?)', [id, data.name, data.description, data.redirectUri], connection);
+    await execute('INSERT INTO application_access_policies(application_id) VALUES (?)',[id],connection);
     await audit(connection, 'application.created', id, { name: data.name });
     const [app] = await query<Application>(`${applicationSelect} WHERE id = ?`, [id], connection);
     return app;
@@ -247,6 +252,8 @@ export async function updateSharingPolicy(actor:Actor,id:string,data:{scopes:str
     await lockAdministrators(actor,connection);
     const [app]=await query<{id:string}>('SELECT id FROM applications WHERE id=? AND revoked_at IS NULL FOR UPDATE',[id],connection);
     if(!app)throw new HttpError(404,'ไม่พบ Service','NOT_FOUND');
+    const [policy]=await query<{required_scopes:string}>('SELECT required_scopes FROM application_access_policies WHERE application_id=? FOR UPDATE',[id],connection);
+    if(policy&&!policy.required_scopes.split(' ').every(scope=>data.scopes.includes(scope)))throw new HttpError(409,'ยกเลิกการบังคับข้อมูลในนโยบายสมาชิกก่อนนำออกจากรายการอนุญาต','REQUIRED_SCOPE');
     await execute('UPDATE applications SET allowed_claim_scopes=?,sharing_purpose=?,sharing_version=sharing_version+1 WHERE id=?',
       [data.scopes.join(' '),data.purpose,id],connection);
     await audit(connection,'application.sharing.updated',id,{scopes:data.scopes});

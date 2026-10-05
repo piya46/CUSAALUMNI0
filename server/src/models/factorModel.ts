@@ -8,7 +8,7 @@ export type FactorRow = Record<string, any>;
 export async function lockFactorSession(sessionId:string, connection:PoolConnection, mode:'pending'|'manage'|'phone'|'reauth') {
   const [row]=await query<FactorRow>(`SELECT s.*,u.email,u.totp_secret,u.phone_required,
     u.mfa_locked_until>UTC_TIMESTAMP(3) AS locked FROM sessions s JOIN users u ON u.id=s.user_id
-    JOIN allowed_emails a ON a.email=u.email WHERE s.id=? AND s.expires_at>UTC_TIMESTAMP(3)
+    JOIN sso_login_accounts a ON a.email=u.email WHERE s.id=? AND s.expires_at>UTC_TIMESTAMP(3)
     AND u.deleted_at IS NULL FOR UPDATE`,[sessionId],connection);
   if(!row)throw new HttpError(401,'กรุณาเข้าสู่ระบบใหม่','UNAUTHENTICATED');
   if(row.locked)throw new HttpError(429,'บัญชีถูกพักการยืนยัน 15 นาที','ACCOUNT_LOCKED');

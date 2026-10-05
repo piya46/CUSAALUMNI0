@@ -18,7 +18,7 @@ export default function Consent() {
       const identity=await api<Identity>('/auth/me');
       if(identity.requiresMfa||identity.phoneRequired)throw new Error('กรุณาเข้าสู่ระบบและยืนยันตัวตนให้ครบ แล้วเริ่มใหม่จาก Service');
       const result=await api<Context>(`/sso/consent?${new URLSearchParams({request})}`);
-      if(active){setCsrfToken(identity.csrfToken);setEmail(identity.user.email);setContext(result);}
+      if(active){setCsrfToken(identity.csrfToken);setEmail(identity.user.email);setContext(result);setSelected(result.scopes.filter(scope=>scope.required).map(scope=>scope.scope));}
     }catch(e){if(active)setError((e as Error).message);}finally{if(active)setLoading(false);}
   })();return()=>{active=false;};},[request]);
   async function decide(approved:boolean){
@@ -36,7 +36,7 @@ export default function Consent() {
       <div className="consent-recipient"><Globe2 size={26}/><div><span>ส่งข้อมูลให้</span><h2>{context.application.name}</h2><small>{context.application.origin}</small></div></div>
       <p className="auth-description">ใช้บัญชี <strong>{email}</strong></p>
       <div className="consent-purpose"><strong>วัตถุประสงค์ที่ Service แจ้ง</strong><p>{context.purpose}</p></div>
-      <p className="consent-intro">เลือกรายการที่ยินยอม ข้อมูลเสริมไม่ถูกเลือกไว้ล่วงหน้า หากไม่แชร์บางรายการ Service อาจให้ใช้งานได้จำกัด</p>
+      <p className="consent-intro">ตรวจรายการจำเป็นของ Service และเลือกข้อมูลเสริมที่ต้องการแชร์ ข้อมูลเสริมไม่ถูกเลือกไว้ล่วงหน้า หากไม่ต้องการส่งข้อมูลจำเป็นสามารถกดไม่อนุญาตได้</p>
       <fieldset className="consent-scopes" disabled={busy}><legend>ข้อมูลที่จะอนุญาต</legend>{context.scopes.map(item=>
         <label key={item.scope} className={`consent-scope ${selected.includes(item.scope)?'selected':''}`}>
           <input type="checkbox" checked={selected.includes(item.scope)} disabled={item.required||busy}

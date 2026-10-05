@@ -14,7 +14,7 @@ import './auth-methods.css';
 export interface ServerStatus { configured: boolean; mailConfigured: boolean; googleConfigured: boolean }
 function ApplicationContext({ context }: { context?: LoginContext | null }) {
   if (!context) return null;
-  return <div className="auth-application"><span className="auth-application-icon"><Globe2 size={20} /></span><div><span>เข้าสู่ระบบเพื่อใช้งาน</span><strong>{context.application.name}</strong><small>{context.application.origin}</small><small>หลังยืนยันตัวตน คุณจะเห็นรายการข้อมูลและเลือกอนุญาตก่อนส่งให้ Service นี้</small></div></div>;
+  return <div className="auth-application"><span className="auth-application-icon"><Globe2 size={20} /></span><div><span>เข้าสู่ระบบเพื่อใช้งาน</span><strong>{context.application.name}</strong><small>{context.application.origin}</small><small>หลังยืนยันตัวตน คุณจะเห็นรายการข้อมูลและเลือกอนุญาตก่อนส่งให้ Service นี้</small>{context.registration==='open'&&<small>บัญชีใหม่จะเริ่มสมัครเฉพาะระบบนี้ ไม่ได้รับสิทธิ์ CUSA ภายใน</small>}</div></div>;
 }
 function GoogleMark() {
   return <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.01v2.5h3.24c1.9-1.75 2.98-4.33 2.98-7.34Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.61-2.43l-3.24-2.5c-.9.6-2.06.97-3.37.97-2.6 0-4.8-1.76-5.59-4.12H3.07v2.59A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.41 13.92a6 6 0 0 1 0-3.84V7.49H3.07a10 10 0 0 0 0 9.02l3.34-2.59Z"/><path fill="#EA4335" d="M12 5.96c1.47 0 2.79.5 3.82 1.5l2.86-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.93 5.49l3.34 2.59C7.2 7.72 9.4 5.96 12 5.96Z"/></svg>;
@@ -27,9 +27,9 @@ export function Login({ status, checking, context, onDemo, onRetry }: { status: 
     <div className="auth-hero-icon"><KeyRound size={30} aria-hidden="true" /></div>
     <p className="auth-eyebrow">ยินดีต้อนรับกลับ</p><h1>เข้าสู่ระบบ</h1><p className="auth-description">ใช้บัญชี Google ของคุณ<br />เพื่อเข้าถึงบริการที่ได้รับสิทธิ์อย่างปลอดภัย</p>
     <p className="auth-legal-note">การดำเนินการต่ออยู่ภายใต้<a href="/terms" target="_blank" rel="noopener noreferrer">ข้อกำหนดการใช้งาน</a> โปรดอ่าน<a href="/privacy" target="_blank" rel="noopener noreferrer">นโยบายความเป็นส่วนตัว</a>ก่อนเข้าสู่ระบบ</p>
-    {authError && <div className="inline-error" role="alert">เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบว่าอีเมลได้รับอนุญาต แล้วลองอีกครั้ง</div>}
+    {authError && <div className="inline-error" role="alert">เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบสิทธิ์สมาชิกหรือคำเชิญ แล้วลองอีกครั้ง</div>}
     {status?.configured ? <a className="auth-google" href={href}><GoogleMark />ดำเนินการต่อด้วย Google<ArrowRight size={17} /></a> : <button className="auth-google" disabled><GoogleMark />ดำเนินการต่อด้วย Google<ArrowRight size={17} /></button>}
-    <p className="auth-note"><LockKeyhole size={14} /><span>สำหรับอีเมลที่ได้รับอนุญาต<br />เลือกวิธียืนยันที่ผูกไว้ในขั้นตอนถัดไป</span></p>
+    <p className="auth-note"><LockKeyhole size={14} /><span>{context?.registration==='open'?'เปิดรับสมาชิกใหม่เฉพาะ Service นี้':context?.registration==='invite'?'สำหรับบัญชีที่มีสิทธิ์หรือคำเชิญของ Service นี้':'สำหรับอีเมลที่ได้รับอนุญาต'}<br />เลือกวิธียืนยันที่ผูกไว้ในขั้นตอนถัดไป</span></p>
     <details className="auth-details"><summary>ใช้ข้อมูลอะไรจาก Google บ้าง?</summary><p>เราใช้ชื่อ อีเมล รูปโปรไฟล์ และรหัสบัญชีเพื่อยืนยันตัวตนและตรวจสิทธิ์ การเข้าสู่ระบบไม่ขอสิทธิ์อ่านกล่องจดหมายของคุณ</p></details>
     {!status?.configured && <div className="auth-availability" role="status"><span>{checking ? 'กำลังตรวจสอบการเชื่อมต่อ…' : status ? 'ระบบยังไม่พร้อมให้เข้าสู่ระบบ' : 'ยังเชื่อมต่อเซิร์ฟเวอร์ไม่ได้'}</span><button onClick={onRetry} disabled={checking} aria-label="ตรวจสอบการเชื่อมต่ออีกครั้ง"><RefreshCw size={15} className={checking ? 'spin' : ''} /></button></div>}
     {context && <p className="auth-return-note">เมื่อยืนยันสำเร็จ คุณจะกลับไปยัง {context.application.name}</p>}

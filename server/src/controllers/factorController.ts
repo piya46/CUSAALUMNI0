@@ -1,3 +1,4 @@
+import { parseAuthorizationReturnTo } from '../services/authorizationRequest.js';
 import type { Request,Response } from 'express';
 import type { RegistrationResponseJSON,AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { z } from 'zod';
@@ -34,9 +35,13 @@ export async function reauthenticateVerify(req:Request,res:Response){
   res.json({ok:true});
 }
 export async function deletePasskey(req:Request,res:Response){await passkey.deletePasskey(req.identity!.sessionId,id.parse(req.params.id),record(req));res.json({ok:true});}
-export async function lineStart(req:Request,res:Response){res.json(await line.lineLinkStart(req.identity!.sessionId,record(req)));}
+export async function lineStart(req:Request,res:Response){
+  const body=z.object({returnTo:z.string().max(3000).optional()}).strict().parse(req.body);
+  const returnTo=body.returnTo?parseAuthorizationReturnTo(body.returnTo).returnTo:undefined;
+  res.json(await line.lineLinkStart(req.identity!.sessionId,record(req),returnTo));
+}
 export async function lineCallback(req:Request,res:Response){
-  try{const state=z.string().regex(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$/).parse(req.query.state),code=z.string().min(1).max(2048).parse(req.query.code);await line.lineLinkFinish(req.identity!.sessionId,state,code,record(req));res.redirect('/login?line=linked');}
+  try{const state=z.string().regex(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$/).parse(req.query.state),code=z.string().min(1).max(2048).parse(req.query.code);const returnTo=await line.lineLinkFinish(req.identity!.sessionId,state,code,record(req));res.redirect(returnTo?`/login?${new URLSearchParams({line:'linked',manage:'security',returnTo})}`:'/login?line=linked');}
   catch{await audit(req,'mfa.line.link.failure',req.identity?.userId,{failure_reason:'LINE_LINK_REJECTED'});res.redirect('/login?line=error');}
 }
 export async function unlinkLine(req:Request,res:Response){await line.unlinkLine(req.identity!.sessionId,record(req));res.json({ok:true});}

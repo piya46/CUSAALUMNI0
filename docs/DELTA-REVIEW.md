@@ -49,7 +49,7 @@
 | First-time SMS | เพิ่ม Firebase Phone Auth ตามบริการของผู้ใช้ | ยืนยันการถือครองเบอร์ ไม่ใช่ KYC/หนึ่งคนหนึ่งเบอร์; required เปิดเฉพาะบัญชีใหม่; quota ต้องคุมที่ Firebase |
 | MFA fallback | คง Google, TOTP, Recovery และ Email OTP ตามนโยบายเดิม | บัญชี TOTP ไม่ลดระดับเป็น Email OTP อัตโนมัติเมื่อ LINE ล่ม |
 | Dynamic branding | คงชื่อ Service และ origin ที่ลงทะเบียน, แบรนด์หลัก CUSA SSO | ไม่รับ logo/color/redirect จาก query ของผู้โจมตี; การเพิ่ม asset upload ต้องออกแบบ validation/storage เพิ่ม ยังไม่ได้เพิ่มธีมตาม Service |
-| Public auto-register | คง Allowlist + membership/role ปิดเป็นค่าเริ่มต้น | การข้าม allowlist กระทบ account revocation ทุกจุด ต้องแยก registration policy ต่อ Service และ abuse/quota ก่อนเปิดจริง รุ่นนี้ยังไม่มี public registration |
+| Public auto-register | คง Allowlist + membership/role ปิดเป็นค่าเริ่มต้น | การข้าม allowlist กระทบ account revocation ทุกจุด ต้องแยก registration policy ต่อ Service และ abuse/quota ก่อนเปิดจริง รุ่น 009 เพิ่ม public/invite registration แบบแยก Service และค่าเริ่มต้นปิด ดู SERVICE-ACCESS.md |
 | Passwordless enforcement | มีอยู่แล้ว: Google-only ก่อน MFA | ไม่มี local password form ให้ซ่อน |
 | Service-scoped roles | มีอยู่แล้วและคงไว้ | Token identity/userinfo กรอง roles ของ app เดียว; ระบบลูกตีความสิทธิ์ธุรกิจเอง |
 | OIDC discovery | ยังไม่ประกาศว่าเป็น OIDC Provider | ต้องมี ID token, JWKS/signing-key rotation, nonce/scopes/claims/discovery และทดสอบ conformance ครบ ไม่เพิ่ม discovery ปลอมทับ OAuth contract เดิม |

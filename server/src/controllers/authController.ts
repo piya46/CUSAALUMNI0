@@ -54,6 +54,7 @@ export async function googleCallback(req: Request, res: Response) {
     const appId=destination.get('client_id');
     const application=appId&&z.uuid().safeParse(appId).success?await ssoModel.getApplication(appId):null;
     const applicationId=application?.redirectUri===destination.get('redirect_uri')?application?.id:undefined;
+    if(appId&&!applicationId)throw new Error('Service is unavailable');
     const session=await model.startGoogleSession({sub:p.sub,email,applicationId,name:(p.name || email).slice(0,255),firstName:(p.given_name??'').slice(0,100),lastName:(p.family_name??'').slice(0,100),avatar:p.picture?.startsWith('https://')?p.picture.slice(0,2048):null},req.cookies?.[sessionCookie],(conn,userId,sessionId)=>model.recordAudit({actorId:userId,actorEmail:email,sessionId,status:'success',userAgent:(req.get('user-agent')??'').slice(0,512),event:'auth.google.success',target:userId,...auditContext(req),actorType:'user',metadata:{}},conn));
     if (!session) throw new Error('Account not allowed');
     res.cookie(sessionCookie,session.token,{...cookieOptions,maxAge:10*60*1000});

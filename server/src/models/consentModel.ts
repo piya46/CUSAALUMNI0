@@ -4,6 +4,7 @@ import type { SsoDatabase, SsoAuditWriter, AuthorizationRequest } from './ssoMod
 import { SsoModelError } from '../services/ssoErrors.js';
 import { hashToken, randomToken } from '../services/crypto.js';
 import { consentNoticeVersion, scopesWithin, scopeDescriptions, type ClaimScope } from '../services/claimScopes.js';
+import { serviceRequirementsSql, pendingMembershipSql } from '../services/servicePolicy.js';
 
 type RequestPayload = { redirectUri: string; challenge: string; state: string };
 type ConsentRow = {
@@ -11,22 +12,26 @@ type ConsentRow = {
   requested_scope: string; granted_scope: string | null; policy_version: number; notice_version: string;
   purpose: string; name: string; redirect_uri: string; allowed_claim_scopes: string; sharing_version: number;
   mfa_method: string; authenticated_at: Date; decided_at: Date | null; revoked_at: Date | null;
+  required_scopes: string; enrollment: string; default_role_id: string|null;
 };
 const payload = (row: ConsentRow): RequestPayload => typeof row.request_payload === 'string' ? JSON.parse(row.request_payload) : row.request_payload;
 // Both the displayed consent and the final approval must still belong to the
 // current full session, account, membership, application and policy revision.
-const liveConsent = `SELECT c.*, a.name, a.redirect_uri, a.allowed_claim_scopes, a.sharing_version
+const liveConsent = `SELECT c.*, a.name, a.redirect_uri, a.allowed_claim_scopes, a.sharing_version,
+ policy.required_scopes,policy.default_role_id,m.enrollment
  FROM sso_consents c JOIN applications a ON a.id=c.application_id AND a.revoked_at IS NULL
+ JOIN application_access_policies policy ON policy.application_id=a.id
  JOIN sessions s ON s.id=c.session_id AND s.user_id=c.user_id
- JOIN users u ON u.id=c.user_id JOIN allowed_emails e ON e.email=u.email
+ JOIN users u ON u.id=c.user_id JOIN sso_login_accounts e ON e.email=u.email
  JOIN application_memberships m ON m.application_id=a.id AND m.user_id=u.id AND m.revoked_at IS NULL
  WHERE c.request_hash=? AND c.session_id=? AND c.user_id=? AND c.decided_at IS NULL
  AND c.expires_at>UTC_TIMESTAMP(3) AND c.revoked_at IS NULL AND c.policy_version=a.sharing_version
  AND s.kind='full' AND s.authenticated_at IS NOT NULL AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL
  AND (u.phone_required=FALSE OR EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id))
- AND EXISTS(SELECT 1 FROM application_member_roles mr JOIN application_roles r
+ AND ${serviceRequirementsSql()}
+ AND (${pendingMembershipSql()} OR (m.enrollment='active' AND EXISTS(SELECT 1 FROM application_member_roles mr JOIN application_roles r
  ON r.id=mr.role_id AND r.application_id=mr.application_id AND r.revoked_at IS NULL
- WHERE mr.application_id=a.id AND mr.user_id=u.id)`;
+ WHERE mr.application_id=a.id AND mr.user_id=u.id)))`;
 
 export function createConsentModel(db: SsoDatabase) {
   async function pending(request: string, sessionId: string, userId: string, connection?: PoolConnection) {
@@ -39,20 +44,23 @@ export function createConsentModel(db: SsoDatabase) {
   return {
     async beginAuthorization(input: AuthorizationRequest & { state: string; scope: string }, record?: SsoAuditWriter) {
       return db.transaction(async connection => {
-        const [app] = await db.query<{ id: string; allowed_claim_scopes: string; sharing_purpose: string; sharing_version: number }>(`
-          SELECT a.id,a.allowed_claim_scopes,a.sharing_purpose,a.sharing_version FROM applications a
+        const [app] = await db.query<{ id: string; allowed_claim_scopes: string; sharing_purpose: string; sharing_version: number;required_scopes:string }>(`
+          SELECT a.id,a.allowed_claim_scopes,a.sharing_purpose,a.sharing_version,policy.required_scopes FROM applications a
+          JOIN application_access_policies policy ON policy.application_id=a.id
           JOIN sessions s ON s.id=? AND s.user_id=? JOIN users u ON u.id=s.user_id
-          JOIN allowed_emails e ON e.email=u.email
+          JOIN sso_login_accounts e ON e.email=u.email
           JOIN application_memberships m ON m.application_id=a.id AND m.user_id=u.id AND m.revoked_at IS NULL
           WHERE a.id=? AND BINARY a.redirect_uri=BINARY ? AND a.revoked_at IS NULL
           AND s.kind='full' AND s.authenticated_at IS NOT NULL AND s.expires_at>UTC_TIMESTAMP(3) AND u.deleted_at IS NULL
           AND (u.phone_required=FALSE OR EXISTS(SELECT 1 FROM phone_identities p WHERE p.user_id=u.id))
-          AND EXISTS(SELECT 1 FROM application_member_roles mr JOIN application_roles r
+          AND ${serviceRequirementsSql()}
+          AND (${pendingMembershipSql()} OR (m.enrollment='active' AND EXISTS(SELECT 1 FROM application_member_roles mr JOIN application_roles r
             ON r.id=mr.role_id AND r.application_id=mr.application_id AND r.revoked_at IS NULL
-            WHERE mr.application_id=a.id AND mr.user_id=u.id) FOR UPDATE`,
+            WHERE mr.application_id=a.id AND mr.user_id=u.id))) FOR UPDATE`,
           [input.sessionId,input.userId,input.applicationId,input.redirectUri],connection);
         if (!app) throw new SsoModelError('access_denied');
         if (!scopesWithin(input.scope,app.allowed_claim_scopes)) throw new SsoModelError('invalid_scope');
+        if (!scopesWithin(app.required_scopes,input.scope)) throw new SsoModelError('invalid_scope');
         const request=randomToken(),id=randomUUID();
         await db.execute(`INSERT INTO sso_consents (id,request_hash,application_id,user_id,session_id,
           request_payload,requested_scope,policy_version,notice_version,purpose,expires_at)
@@ -68,7 +76,7 @@ export function createConsentModel(db: SsoDatabase) {
       const row = await pending(request,sessionId,userId);
       return { application:{name:row.name,origin:new URL(row.redirect_uri).origin}, purpose:row.purpose,
         noticeVersion:row.notice_version, policyVersion:row.policy_version,
-        scopes:row.requested_scope.split(' ').map(value=>({scope:value,required:value==='identity:read',...scopeDescriptions[value as ClaimScope]})) };
+        scopes:row.requested_scope.split(' ').map(value=>({scope:value,required:row.required_scopes.split(' ').includes(value),...scopeDescriptions[value as ClaimScope]})) };
     },
     async decideConsent(request: string, sessionId: string, userId: string, approved: boolean, scopes: string[], record?: SsoAuditWriter) {
       return db.transaction(async connection => {
@@ -85,6 +93,15 @@ export function createConsentModel(db: SsoDatabase) {
         }
         const granted=scopes.join(' ');
         if (!scopesWithin(granted,row.requested_scope)) throw new SsoModelError('invalid_scope');
+        if (!scopesWithin(row.required_scopes,granted)) throw new SsoModelError('invalid_scope');
+        if(row.enrollment==='pending'){
+          const [role]=await db.query<{id:string;code:string}>('SELECT id,code FROM application_roles WHERE id=? AND application_id=? AND revoked_at IS NULL FOR UPDATE',[row.default_role_id,row.application_id],connection);
+          if(!role||/^(admin|administrator|owner|superadmin|root)$/i.test(role.code))throw new SsoModelError('access_denied');
+          await db.execute('INSERT INTO application_member_roles(application_id,user_id,role_id) VALUES (?,?,?)',[row.application_id,userId,role.id],connection);
+          await db.execute("UPDATE application_memberships SET enrollment='active',pending_until=NULL WHERE application_id=? AND user_id=?",[row.application_id,userId],connection);
+          await record?.(connection,'service.registration.completed',row.application_id,{userId});
+        }
+        await db.execute('UPDATE application_memberships SET last_activity_at=UTC_TIMESTAMP(3) WHERE application_id=? AND user_id=?',[row.application_id,userId],connection);
         const [session]=await db.query<{mfa_method:string;authenticated_at:Date}>(
           'SELECT mfa_method,authenticated_at FROM sessions WHERE id=? AND user_id=? FOR UPDATE',[sessionId,userId],connection);
         if(!session?.mfa_method || !session.authenticated_at)throw new SsoModelError('access_denied');

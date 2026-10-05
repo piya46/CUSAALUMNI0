@@ -8,6 +8,7 @@ import { randomToken } from '../services/crypto.js';
 import { parseAuthorizationReturnTo } from '../services/authorizationRequest.js';
 import { visitQueue } from '../services/waitingRoom.js';
 import { queueRedis } from '../services/queueRedis.js';
+import { enrollmentContext } from '../models/servicePolicyModel.js';
 
 export const queueCookie = config.secureCookies ? '__Host-cusa_queue' : 'cusa_queue';
 function browserId(req: Request): string | null {
@@ -52,6 +53,10 @@ export async function queueVisit(req: Request, res: Response) {
 export async function queueGate(req: Request, res: Response, requested: unknown, consume = false): Promise<boolean> {
   const { app, returnTo } = await context(requested);
   if (!app.enabled) return true;
+  // Keep the existing, expiring admission while the user completes enrollment.
+  // Consume only when authorization can proceed to consent; never mint a new
+  // queue admission or extend its lifetime during factor setup.
+  if (consume) consume = (await enrollmentContext(app.id, req.identity!.userId, req.identity!.sessionId)).ready;
   res.set('Retry-After', '10');
   const browser = browserId(req);
   if (browser) {

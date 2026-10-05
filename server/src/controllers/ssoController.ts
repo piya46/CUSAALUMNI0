@@ -75,6 +75,7 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
     }
     const destination = callbackUrl(parameters.redirect_uri);
     if(!scopesWithin(parameters.scope,app.allowedScope))throw new SsoModelError('invalid_scope');
+    if(!scopesWithin(app.requiredScope??'identity:read',parameters.scope))throw new SsoModelError('invalid_scope');
     const returnTo = `/api/sso/authorize?${new URLSearchParams(parameters)}`;
     return { parameters, app, destination, returnTo };
   }
@@ -82,7 +83,7 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
     // Public display context contains only the registered name/origin, never client-supplied branding.
     loginContext: action(async (req, res) => {
       const { app, destination, returnTo } = await authorizationContext(req.query);
-      res.json({ application: { name: app.name, origin: destination.origin }, returnTo });
+      res.json({ application: { name: app.name, origin: destination.origin }, registration:app.registration??'closed', returnTo });
     }),
     authorize: action(async (req, res) => {
       // Never redirect before validating the exact registered callback, even for login/errors.
@@ -91,6 +92,10 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
       if (!req.identity || req.identity.kind !== 'full' || req.identity.phoneRequired) {
         res.redirect(303, `/login?${new URLSearchParams({ returnTo })}`);
         return;
+      }
+      const enrollment=await model.enrollmentContext(applicationId,req.identity.userId,req.identity.sessionId);
+      if(!enrollment.ready){
+        res.redirect(303,`/service-enrollment?${new URLSearchParams({returnTo})}`);return;
       }
       let request: string;
       try {

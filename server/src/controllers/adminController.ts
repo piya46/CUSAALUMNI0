@@ -11,6 +11,7 @@ function auditWriter(req: Request): model.AuditWriter {
 
 export async function overview(_req: Request, res: Response) { res.json(await model.getOverview()); }
 export async function users(req: Request, res: Response) { res.json(await model.listUsers(paginationSchema.parse(req.query))); }
+export async function serviceUsers(req: Request, res: Response) { res.json(await model.listUsers(paginationSchema.parse(req.query),'service')); }
 export async function allowlist(req: Request, res: Response) { res.json(await model.listAllowedEmails(paginationSchema.parse(req.query))); }
 export async function applications(req: Request, res: Response) { res.json(await model.listApplications(paginationSchema.parse(req.query))); }
 export async function apiKeys(req: Request, res: Response) { res.json(await model.listApiKeys(paginationSchema.parse(req.query))); }

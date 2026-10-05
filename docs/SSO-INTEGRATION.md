@@ -88,7 +88,7 @@ Authorization code มีอายุ 90 วินาที ใช้ได้�
 
 Callback ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร ไม่มี wildcard เมื่อ callback หรือ request ไม่ถูกต้อง API จะตอบ JSON error โดยไม่ redirect ผู้ใช้ที่ยังไม่ login/ยังไม่ผ่าน MFA จะไปหน้า `/login` ของ CUSA SSO พร้อม internal `returnTo` ที่ผ่านการตรวจแล้ว
 
-Token เป็นค่า opaque จาก `crypto.randomBytes(32)` (256-bit CSPRNG) แล้ว encode base64url เป็น 43 ตัวอักษร ฐานข้อมูลเก็บเฉพาะ HMAC-SHA-256 digest ที่ใช้ secret นอกฐานข้อมูล ต้องเรียก introspection เพื่อดูสถานะ Query ตรวจ session ที่ผ่าน MFA, อายุ session/token, allowlist, สถานะ soft delete, สมาชิก/Role ใน Service และ application API key แต่ละชุดตรวจได้เฉพาะ token ของ application ตัวเอง การ revoke API key หยุดการแลก code/ตรวจ token ด้วย key นั้น; token ที่ออกไปแล้วจะหมดอายุภายใน 5 นาทีหรือถูกยกเลิกผ่าน session/application
+Token เป็นค่า opaque จาก `crypto.randomBytes(32)` (256-bit CSPRNG) แล้ว encode base64url เป็น 43 ตัวอักษร ฐานข้อมูลเก็บเฉพาะ HMAC-SHA-256 digest ที่ใช้ secret นอกฐานข้อมูล ต้องเรียก introspection เพื่อดูสถานะ Query ตรวจ session ที่ผ่าน MFA, อายุ session/token, Allowlist สำหรับบัญชีภายใน, สถานะ soft delete, สมาชิก/Role ใน Service และ application API key แต่ละชุดตรวจได้เฉพาะ token ของ application ตัวเอง การ revoke API key หยุดการแลก code/ตรวจ token ด้วย key นั้น; token ที่ออกไปแล้วจะหมดอายุภายใน 5 นาทีหรือถูกยกเลิกผ่าน session/application
 
 Introspection มี LRU cache 10,000 entries และรวมคำขอพร้อมกันของ `(apiKeyHash,tokenHash)` เดียวกัน TTL สูงสุด 5 วินาที โดยไม่เกินเวลา expiry ที่เร็วที่สุดของ token, session และ API key (`exp` ใน response เป็น effective expiry นี้) การถอนสิทธิ์จึงอาจช้าสูงสุด 5 วินาที ตั้ง `INTROSPECTION_CACHE_SECONDS=0` เมื่อต้องตรวจทุกครั้ง ส่วน userinfo ไม่มี cache และตรวจสถานะปัจจุบันทุกคำขอ ไม่ cache ผลล้มเหลว/ไม่มีสิทธิ์ ข้อมูลและ token ไม่ถูกส่งผ่าน browser cache
 
@@ -473,4 +473,15 @@ curl "$SSO_ORIGIN/api/sso/userinfo" \
 
 CUSA SSO can complete its second authentication step using a previously enrolled Passkey or LINE Number Matching in addition to TOTP/Recovery. Firebase verifies phone ownership for configured new accounts; it does not replace MFA. Your BFF continues the same authorization-code + PKCE + opaque-token flow and receives only the roles/department of its own Service. Do not trust a browser query parameter such as `method=line` or a Firebase/LINE token as a CUSA access token.
 
-A required phone check is enforced before authorization code issuance, token exchange and live introspection. Per-process introspection TTL still bounds stale revocation to the configured maximum; use 0 when you require a live decision on every operation. See [provider setup](ADDITIONAL-FACTORS.md). This release does not implement OIDC discovery/ID tokens, public registration or a signed backchannel logout protocol; integrations must not infer those features from the new MFA methods.
+A required phone check is enforced before authorization code issuance, token exchange and live introspection. Per-process introspection TTL still bounds stale revocation to the configured maximum; use 0 when you require a live decision on every operation. See [provider setup](ADDITIONAL-FACTORS.md). This release does not implement OIDC discovery/ID tokens, a signed backchannel logout protocol; integrations must not infer those features from the new MFA methods.
+
+
+## นโยบายสมาชิกและข้อมูลจำเป็น (009)
+
+ระบบลูกเริ่มด้วย Authorization Code + PKCE เดิม ไม่จำเป็นต้องจัดการหน้าสมัคร/ผูก LINE เอง CUSA จะพาไป `/service-enrollment` เมื่อยังไม่มีสมาชิกหรือขาดเงื่อนไข แล้วไป Consent ก่อนออก code เสมอ `scope` ต้องครอบคลุม requiredScopes ที่ Admin กำหนด มิฉะนั้นได้ invalid_scope ตั้งแต่เริ่มคำขอ และยังต้องเป็น subset ของ allowed scopes
+
+บัญชีสมัครผ่าน Service ไม่มีสิทธิ์ CUSA ภายในและไม่เข้า Service อื่นโดยอัตโนมัติ ข้อมูลตอบกลับไม่ส่ง platform role ระบบปลายทางต้องตรวจ aud, exp, roles เหมือนเดิม การบังคับเบอร์ verified ไม่เท่ากับเบอร์ตรงกับที่ระบบลูกมี ใช้ `/api/sso/phone-match` หลังได้รับ consent `phone:match` และให้ Backend ระบบลูกตัดสินใจตามผล match/mismatch/unverified ห้ามรวมบัญชีเพียงเพราะเบอร์ตรงกัน
+
+หากต้องรายงานกิจกรรมสำหรับนโยบายไม่ใช้งาน ให้สร้าง backend key แยกที่มี `member:activity` แล้ว POST `/api/sso/activity` ด้วย `{sub,eventId}` ใช้ sub จากการยืนยันตัวตนที่ระบบลูกตรวจสอบแล้วและ eventId UUID ต่อเหตุการณ์ ส่งเฉพาะกิจกรรมผู้ใช้จริง ไม่มีรายละเอียดธุรกรรม เบอร์ หรือ LINE UID ใน payload การตรวจ Token หรือ polling ไม่นับเป็นกิจกรรม สัญญาและข้อจำกัดเรื่อง idempotency/throttling อยู่ใน [Service access](SERVICE-ACCESS.md#api-เพิ่มเติม)
+
+รุ่นนี้รายงาน retention เป็น preview ไม่มีระบบลบสำเนาข้อมูล/Session ในระบบลูกอัตโนมัติ ระบบลูกต้องมีนโยบายของตนเอง และอย่าถือว่าการลบ membership ของ CUSA เท่ากับลบข้อมูลทุกแห่ง

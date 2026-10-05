@@ -14,7 +14,7 @@ const fields=`r.id,r.user_id AS userId,r.status,r.reason,r.created_at AS created
 
 export async function reserveReset(userId:string,reason:string,record:AuditWriter){
   return transaction(async conn=>{
-    const [user]=await query<Row>(`SELECT u.id,u.totp_secret FROM users u JOIN allowed_emails e ON e.email=u.email
+    const [user]=await query<Row>(`SELECT u.id,u.totp_secret FROM users u JOIN sso_login_accounts e ON e.email=u.email
       WHERE u.id=? AND u.deleted_at IS NULL AND u.totp_secret IS NOT NULL FOR UPDATE`,[userId],conn);
     if(!user)throw new HttpError(409,'บัญชีนี้ไม่ได้ผูก Authenticator','MFA_NOT_ENABLED');
     const [existing]=await query<Row>(`SELECT id FROM mfa_reset_requests WHERE user_id=? AND status IN ('uploading','pending','pending_second') AND purged_at IS NULL AND delete_after>UTC_TIMESTAMP(3) FOR UPDATE`,[userId],conn);
@@ -40,7 +40,7 @@ export async function cancelFailedUpload(id:string){
 export async function ownReset(userId:string){const [row]=await query<Row>(`SELECT ${fields} FROM mfa_reset_requests r WHERE r.user_id=? ORDER BY r.created_at DESC,r.id DESC LIMIT 1`,[userId]);return row??null;}
 export async function listResets(status:string,cursor?:{createdAt:Date;id:string}){
   const rows=await query<Row>(`SELECT ${fields},u.email,u.name,e.role AS userRole FROM mfa_reset_requests r
-    LEFT JOIN users u ON u.id=r.user_id LEFT JOIN allowed_emails e ON e.email=u.email
+    LEFT JOIN users u ON u.id=r.user_id LEFT JOIN sso_login_accounts e ON e.email=u.email
     WHERE (?='all' OR r.status=?) ${cursor?'AND (r.created_at<? OR (r.created_at=? AND r.id<?))':''}
     ORDER BY r.created_at DESC,r.id DESC LIMIT 51`,[status,status,...(cursor?[cursor.createdAt,cursor.createdAt,cursor.id]:[])]);
   const requests=rows.slice(0,50),last=requests.at(-1);
@@ -68,7 +68,7 @@ export async function decideReset(actor:Actor,id:string,decision:'approve'|'reje
     if(decision==='approve'){
       const [view]=await query<Row>('SELECT admin_id FROM mfa_reset_reviews WHERE request_id=? AND admin_id=? AND viewed_at>DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 30 MINUTE)',[id,actor.userId],conn);
       if(!view)throw new HttpError(403,'เปิดตรวจหลักฐานก่อนอนุมัติ','EVIDENCE_REVIEW_REQUIRED');
-      const [user]=await query<Row>(`SELECT u.id,u.totp_secret,e.role FROM users u JOIN allowed_emails e ON e.email=u.email WHERE u.id=? AND u.deleted_at IS NULL FOR UPDATE`,[row.user_id],conn);
+      const [user]=await query<Row>(`SELECT u.id,u.totp_secret,e.role FROM users u JOIN sso_login_accounts e ON e.email=u.email WHERE u.id=? AND u.deleted_at IS NULL FOR UPDATE`,[row.user_id],conn);
       if(!user?.totp_secret||hashToken(user.totp_secret)!==row.factor_hash)throw new HttpError(409,'MFA ของบัญชีเปลี่ยนไปแล้ว ให้ปฏิเสธและเริ่มคำขอใหม่','RESET_UNAVAILABLE');
       // A purge may have removed files before its DB transaction rolled back.
       // Re-check authenticated ciphertext before approving, while holding the row lock.
@@ -79,7 +79,7 @@ export async function decideReset(actor:Actor,id:string,decision:'approve'|'reje
           await record(conn,'mfa.reset.first_approved',row.user_id,{requestId:id});return {status:'pending_second'};
         }
         if(row.first_approved_by===actor.userId)throw new HttpError(403,'บัญชีผู้ดูแลต้องมีผู้อนุมัติ 2 คนที่ไม่ใช่เจ้าของบัญชี','SECOND_REVIEWER_REQUIRED');
-        const [first]=await query<Row>(`SELECT u.id FROM users u JOIN allowed_emails e ON e.email=u.email WHERE u.id=? AND e.role='admin' AND u.deleted_at IS NULL`,[row.first_approved_by],conn);
+        const [first]=await query<Row>(`SELECT u.id FROM users u JOIN sso_login_accounts e ON e.email=u.email WHERE u.id=? AND e.role='admin' AND u.deleted_at IS NULL`,[row.first_approved_by],conn);
         if(!first)throw new HttpError(409,'ผู้อนุมัติคนแรกไม่มีสิทธิ์แล้ว ให้ปฏิเสธและเริ่มคำขอใหม่','REVIEWER_REVOKED');
       }
       await execute('UPDATE users SET totp_secret=NULL,totp_last_step=NULL,mfa_failed_attempts=0,mfa_locked_until=NULL WHERE id=?',[row.user_id],conn);

@@ -35,6 +35,7 @@ test('service memberships and roles are isolated, audited, revocable, and enforc
     }
     for (const [app, key] of [[appA, keyA], [appB, keyB]]) {
       await execute('INSERT INTO applications (id,name,redirect_uri) VALUES (?,?,?)', [app, app, redirectUri]);
+      await execute('INSERT INTO application_access_policies(application_id) VALUES (?)',[app]);
       await execute('INSERT INTO api_keys (id,application_id,name,prefix,key_hash,scopes,expires_at) VALUES (?,?,?,?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))', [randomUUID(), app, 'test', 'test', hashToken(key), JSON.stringify(['identity:read','token:introspect'])]);
     }
     await execute("INSERT INTO sessions (id,token_hash,user_id,kind,csrf_token,mfa_method,authenticated_at,expires_at) VALUES (?,?,?,'full',?,'totp',UTC_TIMESTAMP(3),DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))", [sessionId, hashToken(randomToken()), userId, randomToken()]);

@@ -59,12 +59,12 @@ export async function revokeRole(actor: Actor, applicationId: string, roleId: st
 export async function listMembers(applicationId: string, options: Pagination) {
   await activeApplication(applicationId);
   const pattern = `%${options.search.replace(/[!%_]/g, '!$&')}%`;
-  const from = `application_memberships m JOIN users u ON u.id=m.user_id JOIN allowed_emails e ON e.email=u.email`;
-  const where = `m.application_id=? AND m.revoked_at IS NULL AND u.deleted_at IS NULL AND
+  const from = `application_memberships m JOIN users u ON u.id=m.user_id JOIN sso_login_accounts e ON e.id=u.id`;
+  const where = `m.application_id=? AND u.deleted_at IS NULL AND
     (u.email LIKE ? ESCAPE '!' OR ${displayName} LIKE ? ESCAPE '!' OR m.department LIKE ? ESCAPE '!')`;
   const params = [applicationId, pattern, pattern, pattern];
   const [{ total }] = await query<{ total: number }>(`SELECT COUNT(*) AS total FROM ${from} WHERE ${where}`, params);
-  const members = await query<{ userId: string; name: string; email: string; department: string; roleIds: string | string[] }>(`SELECT m.user_id AS userId, ${displayName} AS name, u.email, m.department,
+  const members = await query<{ userId: string; name: string; email: string; department: string; roleIds: string | string[] }>(`SELECT m.user_id AS userId, ${displayName} AS name, u.email, u.account_type AS accountType, m.enrollment, m.revoked_at AS revokedAt, m.last_activity_at AS lastActivityAt, m.department,
     COALESCE((SELECT JSON_ARRAYAGG(mr.role_id) FROM application_member_roles mr JOIN application_roles r ON r.id=mr.role_id AND r.revoked_at IS NULL
       WHERE mr.application_id=m.application_id AND mr.user_id=m.user_id), JSON_ARRAY()) AS roleIds
     FROM ${from} WHERE ${where} ORDER BY m.created_at DESC, m.user_id LIMIT ? OFFSET ?`, [...params, options.limit, (options.page - 1) * options.limit]);
@@ -79,13 +79,13 @@ export async function saveMember(actor: Actor, applicationId: string, userId: st
   if (!input.roleIds.length || input.roleIds.length > 20 || new Set(input.roleIds).size !== input.roleIds.length) throw new HttpError(400, 'เลือก Role ที่ไม่ซ้ำกัน 1–20 รายการ', 'INVALID_SERVICE_ROLE');
   await transaction(async conn => {
     await lockAdministrators(actor, conn); await activeApplication(applicationId, conn);
-    const [user] = await query<{ id: string }>('SELECT u.id FROM users u JOIN allowed_emails e ON e.email=u.email WHERE u.id=? AND u.deleted_at IS NULL FOR UPDATE', [userId], conn);
+    const [user] = await query<{ id: string }>('SELECT u.id FROM users u JOIN sso_login_accounts e ON e.id=u.id WHERE u.id=? AND u.deleted_at IS NULL FOR UPDATE', [userId], conn);
     if (!user) throw new HttpError(404, 'ไม่พบผู้ใช้ที่มีสิทธิ์เข้าสู่ระบบ', 'NOT_FOUND');
     const roles = await query<{ id: string }>(`SELECT id FROM application_roles WHERE application_id=? AND revoked_at IS NULL AND id IN (${input.roleIds.map(() => '?').join(',')}) FOR UPDATE`, [applicationId, ...input.roleIds], conn);
     if (!input.roleIds.length || roles.length !== input.roleIds.length) throw new HttpError(400, 'Role ต้องเป็นของ Service นี้และยังเปิดใช้งานอยู่', 'INVALID_SERVICE_ROLE');
     const before=await membershipSnapshot(applicationId,userId,conn);
     await execute(`INSERT INTO application_memberships (application_id,user_id,department) VALUES (?,?,?)
-      ON DUPLICATE KEY UPDATE department=VALUES(department),revoked_at=NULL,updated_at=UTC_TIMESTAMP(3)`, [applicationId, userId, input.department], conn);
+      ON DUPLICATE KEY UPDATE department=VALUES(department),enrollment='active',pending_until=NULL,revoked_at=NULL,updated_at=UTC_TIMESTAMP(3)`, [applicationId, userId, input.department], conn);
     await execute('DELETE FROM application_member_roles WHERE application_id=? AND user_id=?', [applicationId, userId], conn);
     for (const roleId of input.roleIds) await execute('INSERT INTO application_member_roles (application_id,user_id,role_id) VALUES (?,?,?)', [applicationId, userId, roleId], conn);
     await revokeCredentials(applicationId, userId, conn);

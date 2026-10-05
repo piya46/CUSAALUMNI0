@@ -4,12 +4,14 @@ import * as controller from '../controllers/adminController.js';
 
 import * as reset from '../controllers/mfaResetController.js';
 import * as access from '../controllers/serviceAccessController.js';
+import * as policy from '../controllers/servicePolicyController.js';
 import { readQueueSettings, saveQueueSettings } from '../controllers/waitingRoomController.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin, requireRecentAdminMfa, csrfProtection);
 adminRouter.get('/overview', controller.overview);
 adminRouter.get('/users', controller.users);
+adminRouter.get('/service-users', controller.serviceUsers);
 adminRouter.delete('/users/:id', controller.deleteUser);
 adminRouter.delete('/users/:id/sessions', requireFreshMfa, controller.revokeUserSessions);
 adminRouter.get('/allowlist', controller.allowlist);
@@ -29,6 +31,12 @@ adminRouter.get('/audit', controller.auditLog);
 
 adminRouter.patch('/users/:id/profile', access.editProfile);
 adminRouter.get('/applications/:applicationId/roles', access.roles);
+adminRouter.get('/applications/:applicationId/access-policy',policy.readPolicy);
+adminRouter.put('/applications/:applicationId/access-policy',policy.savePolicy);
+adminRouter.get('/applications/:applicationId/invitations',policy.invitations);
+adminRouter.post('/applications/:applicationId/invitations',policy.invite);
+adminRouter.delete('/applications/:applicationId/invitations',policy.uninvite);
+adminRouter.get('/applications/:applicationId/lifecycle-preview',policy.preview);
 adminRouter.post('/applications/:applicationId/roles', access.createRole);
 adminRouter.patch('/applications/:applicationId/roles/:roleId', access.editRole);
 adminRouter.delete('/applications/:applicationId/roles/:roleId', access.deleteRole);
