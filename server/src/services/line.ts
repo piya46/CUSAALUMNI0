@@ -28,6 +28,17 @@ export function validLineSignature(raw:Buffer,signature:string|undefined){
   return Boolean(config.lineMfaEnabled&&signature&&/^[A-Za-z0-9+/]{43}=$/.test(signature)&&safeEqual(signature,createHmac('sha256',config.lineMessagingChannelSecret).update(raw).digest('base64')));
 }
 
+// Native chat feedback; no message bubble or reply token is consumed.
+// Keep this optional request short so an unavailable indicator cannot hold up the result.
+export async function showLineLoading(subject:string){
+  const response=await fetch('https://api.line.me/v2/bot/chat/loading/start',{
+    method:'POST',redirect:'error',signal:AbortSignal.timeout(1000),
+    headers:{Authorization:`Bearer ${config.lineChannelAccessToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({chatId:subject,loadingSeconds:5}),
+  });
+  if(!response.ok)throw new Error('LINE_LOADING_UNAVAILABLE');
+}
+
 export async function replyLineDecision(replyToken:string,id:string,decision:LineDecision){
   const response=await fetch('https://api.line.me/v2/bot/message/reply',{
     method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { matchingMessage, matchingResultMessage, lineReference } from '../src/services/lineMessages.js';
-import { sendLineMatching, replyLineDecision } from '../src/services/line.js';
+import { sendLineMatching, replyLineDecision, showLineLoading } from '../src/services/line.js';
 
 const id = '00000000-1234-4000-8000-000000000001';
 const choices = [
@@ -21,10 +21,23 @@ test('LINE Flex keeps all opaque postbacks, denial, purpose and matching Ref wit
     const action = button.action, params = new URLSearchParams(action.data);
     assert.equal(action.type, 'postback'); assert.equal(action.label, choices[index].label);
     assert.equal(params.get('choice'), choices[index].value); assert.equal(params.get('cusa_mfa'), id);
-    assert.doesNotMatch(action.displayText, /สำเร็จ/); // Only the originating browser can finish authentication.
+    assert.equal(action.displayText, undefined); assert.equal(action.text, undefined);
   }
   assert.equal(buttons[0].color, buttons[1].color); assert.equal(buttons[0].color, buttons[2].color);
   assert.doesNotMatch(json, /correct|https?:\/\//);
+});
+
+test('LINE loading uses the native chat indicator with a short timeout and no message or reply token',async t=>{
+  const subject=`U${'1'.repeat(32)}`;
+  let fail=false;
+  t.mock.method(globalThis,'fetch',async(url:unknown,options:RequestInit)=>{
+    assert.equal(url,'https://api.line.me/v2/bot/chat/loading/start');
+    assert.equal(options.method,'POST');assert.equal(options.redirect,'error');assert.ok(options.signal);
+    assert.deepEqual(JSON.parse(String(options.body)),{chatId:subject,loadingSeconds:5});
+    return fail?new Response('private-provider-detail',{status:429}):Response.json({},{status:202});
+  });
+  await showLineLoading(subject);
+  fail=true;await assert.rejects(showLineLoading(subject),{message:'LINE_LOADING_UNAVAILABLE'});
 });
 
 test('decision cards report the committed outcome without replay controls or claiming an authenticated browser', () => {

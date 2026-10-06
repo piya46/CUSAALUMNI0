@@ -10,7 +10,7 @@ import * as passkey from '../models/passkeyModel.js';
 import * as line from '../models/lineModel.js';
 import * as phone from '../models/phoneModel.js';
 import { firebaseWebConfig,verifyFirebasePhoneToken } from '../services/firebasePhone.js';
-import { replyLineDecision } from '../services/line.js';
+import { replyLineDecision,showLineLoading } from '../services/line.js';
 import { readLineWebhook,lineMfaPostback } from '../services/lineWebhook.js';
 const record=(req:Request):AuthAudit=>(conn,event,target,metadata)=>audit(req,event,target,metadata,conn);
 const id=z.uuid();
@@ -57,6 +57,9 @@ export async function lineWebhook(req:Request,res:Response){
     // Reply only after the one-time decision and its audit record commit. A delivery
     // failure must never undo MFA, promote the browser, or replay an old choice.
     if(decision&&event.replyToken){
+      // Settle loading before the reply so a late indicator does not follow the result card.
+      try{await showLineLoading(event.subject);}
+      catch{console.warn(JSON.stringify({event:'auth.line.loading.failure',reason:'LINE_LOADING_UNAVAILABLE'}));}
       try{await replyLineDecision(event.replyToken,event.challengeId,decision);}
       catch{console.warn(JSON.stringify({event:'auth.line.reply.failure',reason:'LINE_REPLY_UNAVAILABLE'}));}
     }

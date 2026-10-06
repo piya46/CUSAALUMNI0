@@ -32,9 +32,6 @@ export function matchingMessage(id: string, choices: { label: string; value: str
   const action = (choice: { label: string; value: string }) => ({
     type: 'postback', label: choice.label,
     data: `cusa_mfa=${id}&choice=${choice.value}`,
-    displayText: choice.label === 'ปฏิเสธ'
-      ? 'ส่งคำขอปฏิเสธแล้ว กรุณาตรวจผลที่หน้า CUSA SSO'
-      : 'ส่งเลขที่เลือกแล้ว กรุณากลับไปตรวจผลที่หน้า CUSA SSO',
   });
   return {
     type: 'flex', altText: `CUSA SSO · ยืนยันเข้าสู่ระบบ · Ref ${reference} · เลือกเลขที่ตรงกับหน้าจอ`,

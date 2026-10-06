@@ -1,5 +1,7 @@
 # อัปโหลด CUSA SSO รุ่นนี้บน HostAtom / Plesk
 
+ปรับประสบการณ์ LINE 6 ตุลาคม 2026: ปุ่มเลขและปุ่มปฏิเสธไม่เพิ่มข้อความแทนผู้ใช้ในแชตแล้ว ใช้ตัวโหลดของ LINE ระหว่างรอการ์ดผล โดยยังตรวจ MFA และตอบผลครั้งเดียวตามเดิม ตัวโหลดเป็นของห้องแชต ไม่ใช่ปุ่ม Flex ที่หมุน; หาก LINE ไม่แสดงตัวโหลดหรือ API ล้มเหลวยังยืนยันและส่งผลได้ ไม่มี `.env` หรือ migration เพิ่ม Build/Restart แล้วเริ่มคำขอ LINE ใหม่เพื่อตรวจ เพราะการ์ดที่ส่งไปก่อนหน้ายังมีข้อความเดิมอยู่
+
 ปรับปรุง 6 ตุลาคม 2026: LINE MFA รองรับ Central webhook ที่ส่ง raw body และ `X-Line-Signature` เดิม พร้อมตรวจ batch แบบราย event และปฏิเสธ MFA parameter ซ้ำ เพิ่ม `.env` ทางเลือก `LINE_WEBHOOK_DESTINATION` สำหรับ pin OA และ `LINE_WEBHOOK_GATEWAY_TOKEN` สำหรับบังคับ Bearer token จาก Central เพิ่มจากลายเซ็น LINE หากเปิด gateway token ต้องตั้ง destination และให้ Central ส่ง Authorization ด้วยก่อนเปลี่ยนเส้นทางรับจริง ไม่ต้องเพิ่ม migration ดู [สัญญาการส่งต่อและขั้นตอนตั้งค่า](ADDITIONAL-FACTORS.md#central-webhook-ส่ง-raw-body-และลายเซ็น-line-เดิม)
 
 ปรับปรุง 5 ตุลาคม 2026: การผูกเบอร์ซ้ำรองรับคำขอยืนยันพร้อมกันแล้ว โดยใช้ UNIQUE เดิมจาก migration 006 เก็บเจ้าของเบอร์เดิมและ Audit เมื่อปฏิเสธ หน้าเว็บล้างคำขอที่ใช้แล้วแต่ยังคง cooldown ไม่มี migration หรือ `.env` เพิ่มสำหรับการแก้ส่วนนี้ อัปโหลด build ใหม่แล้ว Restart ตามขั้นตอนด้านล่าง

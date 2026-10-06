@@ -8,12 +8,13 @@ import { hashToken, seal } from '../src/services/crypto.js';
 
 // Exercise the real signed webhook and model with a transactional in-memory DB
 // adapter. No external account, live database or LINE message is used.
-test('LINE replies only after a bound decision commits; replay, bad signature and rollback never send a result', async t => {
+test('LINE loads and replies after a bound decision commits; replay and invalid proofs stay silent; loading failure preserves the result', async t => {
   const previous={lineMfaEnabled:config.lineMfaEnabled,lineMessagingChannelSecret:config.lineMessagingChannelSecret,lineWebhookDestination:config.lineWebhookDestination,lineWebhookGatewayToken:config.lineWebhookGatewayToken};
   Object.assign(config,{lineMfaEnabled:true,lineMessagingChannelSecret:'synthetic-webhook-secret',lineWebhookDestination:`U${'0'.repeat(32)}`,lineWebhookGatewayToken:'g'.repeat(43)});
   const id='00000000-1234-4000-8000-000000000001',subject=`U${'1'.repeat(32)}`,choice='a'.repeat(43);
-  let status='pending',snapshot=status,committed=false,failAudit=false,failDelivery=false,correct=true,expired=false;
-  let replies=0,failures=0,transactions=0;
+  let status='pending',snapshot=status,committed=false,failAudit=false,failDelivery=false,failLoading=false,correct=true,expired=false;
+  let replies=0,loadings=0,failures=0,transactions=0;
+  const effects:string[]=[];
   const connection={
     beginTransaction:async()=>{snapshot=status;committed=false;transactions++;},
     commit:async()=>{committed=true;},rollback:async()=>{status=snapshot;},release:()=>{},
@@ -30,17 +31,25 @@ test('LINE replies only after a bound decision commits; replay, bad signature an
   };
   t.mock.method(pool,'getConnection',async()=>connection as any);
   t.mock.method(globalThis,'fetch',async(url:unknown,options:RequestInit)=>{
+    assert.ok(committed);
+    if(url==='https://api.line.me/v2/bot/chat/loading/start'){
+      loadings++;effects.push('loading');
+      assert.deepEqual(JSON.parse(String(options.body)),{chatId:subject,loadingSeconds:5});
+      if(failLoading)throw new Error('private-loading-token');
+      return Response.json({},{status:202});
+    }
+    effects.push('reply');
     replies++;assert.ok(committed);assert.equal(url,'https://api.line.me/v2/bot/message/reply');
     assert.equal(JSON.parse(String(options.body)).replyToken,'synthetic-reply');
     if(failDelivery)throw new Error('private-provider-token');
     return Response.json({});
   });
   const warnings:string[]=[];t.mock.method(console,'warn',(message:string)=>warnings.push(message));
-  async function deliver({sender=subject,badSignature=false,data=`cusa_mfa=${id}&choice=${choice}`,redelivery=false}={}){
+  async function deliver({sender=subject,badSignature=false,data=`cusa_mfa=${id}&choice=${choice}`,redelivery=false,replyToken='synthetic-reply'}={}){
     const raw=Buffer.from(JSON.stringify({destination:config.lineWebhookDestination,events:[
       {type:'accountLink',link:{result:'failed'}},null,{type:'postback',source:null},
       {type:'message',message:{type:'text',text:'42'}},
-      {type:'postback',timestamp:Date.now(),replyToken:'synthetic-reply',source:{type:'user',userId:sender},postback:{data},deliveryContext:{isRedelivery:redelivery}},
+      {type:'postback',timestamp:Date.now(),replyToken,source:{type:'user',userId:sender},postback:{data},deliveryContext:{isRedelivery:redelivery}},
       {type:'follow'},
     ]}));
     const signature=createHmac('sha256',config.lineMessagingChannelSecret).update(raw).digest('base64');
@@ -53,13 +62,19 @@ test('LINE replies only after a bound decision commits; replay, bad signature an
     await deliver({data:`cusa_mfa=${id}&choice=${'b'.repeat(43)}`});assert.equal(status,'pending');assert.equal(replies,0);
     await deliver({sender:`U${'2'.repeat(32)}`});assert.equal(status,'pending');assert.equal(replies,0);
     expired=true;await deliver();assert.equal(status,'pending');assert.equal(replies,0);expired=false;
-    failAudit=true;await assert.rejects(deliver(),{message:'audit unavailable'});assert.equal(status,'pending');assert.equal(replies,0);failAudit=false;
-    await deliver({redelivery:true});assert.equal(status,'approved');assert.equal(replies,1);
-    await deliver({redelivery:true});assert.equal(status,'approved');assert.equal(replies,1);
-    status='pending';correct=false;await deliver();assert.equal(status,'denied');assert.equal(replies,2);assert.equal(failures,1);
-    await deliver();assert.equal(failures,1);assert.equal(replies,2);
-    status='pending';correct=true;failDelivery=true;await deliver();assert.equal(status,'approved');assert.equal(replies,3);
+    failAudit=true;await assert.rejects(deliver(),{message:'audit unavailable'});assert.equal(status,'pending');assert.equal(replies,0);failAudit=false;assert.equal(loadings,0);
+    await deliver({redelivery:true});assert.equal(status,'approved');assert.equal(replies,1);assert.equal(loadings,1);
+    assert.deepEqual(effects,['loading','reply']);
+    await deliver({redelivery:true});assert.equal(status,'approved');assert.equal(replies,1);assert.equal(loadings,1);
+    status='pending';correct=false;await deliver();assert.equal(status,'denied');assert.equal(replies,2);assert.equal(failures,1);assert.equal(loadings,2);
+    await deliver();assert.equal(failures,1);assert.equal(replies,2);assert.equal(loadings,2);
+    status='pending';correct=true;failDelivery=true;await deliver();assert.equal(status,'approved');assert.equal(replies,3);assert.equal(loadings,3);
     assert.equal(warnings.length,1);assert.ok(!warnings.join('').includes('private-provider-token'));
-    await deliver();assert.equal(replies,3);
+    await deliver();assert.equal(replies,3);assert.equal(loadings,3);
+    status='pending';failDelivery=false;failLoading=true;await deliver();assert.equal(status,'approved');assert.equal(replies,4);assert.equal(loadings,4);
+    assert.equal(warnings.length,2);assert.ok(warnings[1].includes('LINE_LOADING_UNAVAILABLE'));assert.ok(!warnings.join('').includes('private-loading-token'));
+    await deliver();assert.equal(replies,4);assert.equal(loadings,4);
+    assert.deepEqual(effects,['loading','reply','loading','reply','loading','reply','loading','reply']);
+    status='pending';await deliver({replyToken:''});assert.equal(status,'approved');assert.equal(replies,4);assert.equal(loadings,4);
   }finally{Object.assign(config,previous);}
 });

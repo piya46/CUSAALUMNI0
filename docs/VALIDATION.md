@@ -1,5 +1,11 @@
 # Validation record
 
+## Quiet LINE postbacks and native loading — 2026-10-06
+
+- Removed `displayText` from new number/deny buttons so tapping does not add an outgoing user message bubble. The opaque postback contract is unchanged. After a bound decision and audit commit, SSO requests LINE's native chat loading indicator (5 seconds, 1-second API timeout) before its existing one-time result reply. This is chat feedback, not an editable loading state on the original Flex button.
+- Focused message/webhook tests: **6 passed, 0 failed**. Covers quiet postbacks, native loading payload, loading-before-reply ordering, invalid sender/token/signature, audit rollback, redelivery/replay, provider reply failure, loading failure preserving the decision/reply, and a decision without a usable reply token. LINE and database calls are mocked; no real LINE messages or loading animations were sent.
+- Server TypeScript build and whitespace checks pass. No environment, gateway contract or migration changes. Deployment and an on-device LINE check are still required; existing cards retain their old `displayText`, so validation must use a newly issued challenge.
+
 ## LINE MFA through a central webhook — 2026-10-06
 
 - SSO retains independent HMAC verification of the original raw LINE body. Added optional OA destination pinning and an additional Central-to-SSO bearer credential; gateway authentication requires a pinned destination and never replaces the LINE signature. No private `.env`, database schema, dependency, production host or Central service was modified.
