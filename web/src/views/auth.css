@@ -62,3 +62,56 @@
   .auth-card h1 { font-size:24px; }
 }
 @media(prefers-reduced-motion:reduce) { .auth-card { animation:none; } }
+
+/* Shared entry journey: sign-in, MFA, consent, and account recovery. */
+.auth-layout { padding: 40px 32px 24px; background: radial-gradient(ellipse at 9% 25%, #ffe5af70, transparent 43%), radial-gradient(ellipse at 100% 90%, #ffe0c540, transparent 38%), #fbf8f2; }
+.auth-layout .auth-main { max-width: 1120px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: 80px; align-items: center; padding: 36px 0 48px; }
+.auth-layout .auth-main-wide { max-width: 1200px; grid-template-columns: minmax(0, 1fr) minmax(0, 580px); gap: 64px; }
+.auth-story { padding: 12px 0; min-width: 0; }
+.auth-layout .auth-brand { justify-items: start; margin-bottom: 44px; gap: 8px; }
+.auth-layout .auth-brand .brand-mark { background: #ffdfa4; border: 1px solid #ecc888; }
+.auth-layout .auth-brand .brand strong { font-size: 29px; color: #6c411e; }
+.auth-layout .auth-brand>span { font-size: 12px; color: #90734e; }
+.story-label { display: inline-flex; align-items: center; gap: 8px; color: #a56527; font-size: 10px; font-weight: 600; letter-spacing: 1.7px; margin-bottom: 16px; }
+.auth-story-copy h2 { font-size: clamp(32px, 3.3vw, 43px); line-height: 1.5; letter-spacing: -1px; color: #4c311c; }
+.auth-story-copy em { font-style: normal; color: #b45a18; }
+.auth-story-copy p { margin-top: 14px; font-size: 14px; line-height: 1.9; color: #917554; }
+.auth-journey { max-width: 350px; margin-top: 30px; display: grid; justify-items: start; }
+.journey-item { display: flex; align-items: center; gap: 13px; width: 100%; padding: 14px 18px; border: 1px solid #eadac2; border-radius: 16px; background: #fffdf6d9; box-shadow: 0 5px 16px #81501b05; }
+.journey-item.featured { background: #fff0d4; border-color: #edc58d; transform: translateX(22px); box-shadow: 0 8px 24px #a86a1d09; }
+.journey-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: #a67c44; background: #f5eee1; }
+.featured .journey-icon { color: #a5581c; background: #ffe0a9; }
+.journey-item>div { flex: 1; }
+.journey-item small { display: block; font-size: 10px; color: #9e825d; margin-bottom: 2px; }
+.journey-item strong { display: block; font-size: 13px; color: #73512a; font-weight: 500; }
+.journey-item>svg { color: #b57a35; }
+.journey-dot { width: 7px; height: 7px; background: #a7b393; border-radius: 50%; }
+.journey-arrow { color: #d5b689; margin: 7px 0 7px 39px; }
+.auth-story-footer { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #a18157; margin-top: 28px; }
+.auth-form-area { min-width: 0; }
+.auth-layout .auth-card { border-radius: 26px; padding: 36px; border-color: #ede0cd; box-shadow: 0 20px 70px #7b4c1708, 0 3px 8px #7b4c1703; }
+.auth-layout .auth-card h1 { font-size: 28px; color: #52341c; }
+.auth-layout .auth-footer { font-size: 11px; color: #8b7355; }
+.auth-layout .auth-footer .legal-links { margin-bottom: 6px; }
+@media (max-width: 1000px) {
+  .auth-layout .auth-main, .auth-layout .auth-main-wide { gap: 40px; grid-template-columns: minmax(0, 1fr) minmax(0, 460px); }
+  .auth-story-copy h2 { font-size: 33px; }
+  .journey-item { padding: 12px; }
+  .journey-item.featured { transform: none; }
+  .auth-layout .auth-card { padding: 30px; }
+}
+@media (max-width: 760px) {
+  .auth-layout { padding: 24px 20px; }
+  .auth-layout .auth-main, .auth-layout .auth-main-wide { max-width: 540px; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 16px 0 28px; }
+  .auth-story { padding: 0; }
+  .auth-layout .auth-brand { justify-items: center; margin-bottom: 0; }
+  .auth-story-copy, .auth-journey, .auth-story-footer { display: none; }
+  .auth-layout .auth-card { padding: 30px; border-radius: 22px; }
+}
+@media (max-width: 480px) {
+  .auth-layout { padding: 20px 16px; }
+  .auth-layout .auth-card { padding: 28px 20px; }
+  .auth-layout .auth-card h1 { font-size: 25px; }
+  .auth-layout .auth-brand .brand strong { font-size: 25px; }
+  .auth-layout .auth-footer { font-size: 10px; }
+}

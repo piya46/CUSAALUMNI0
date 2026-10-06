@@ -8,7 +8,6 @@ import { displayThaiMobile, thaiMobile } from '../models/phone';
 import type { LoginContext } from '../models/login';
 import { AuthLayout } from '../components/AuthLayout';
 import { OtpInput } from '../components/OtpInput';
-import { Panel } from '../components/ui';
 import type { Identity } from '../models/types';
 import './additional-factors.css';
 interface Settings {passkeyEnabled:boolean;lineEnabled:boolean;phoneEnabled:boolean;line:boolean;phoneVerified:boolean;passkeys:{id:string;name:string}[];firebase?:{apiKey:string;authDomain:string;projectId:string;appId:string}}
@@ -31,7 +30,7 @@ export function AdditionalFactors({identity,onIdentityChanged}:{identity:Identit
     const response=await startRegistration({optionsJSON:result.options});
     await api('/auth/passkeys/register/verify','POST',{challengeId:result.challengeId,response,name});setNotice('เพิ่ม Passkey แล้ว ใช้ได้ในขั้นตอน MFA หลังเข้าสู่ระบบด้วย Google');
   }
-  return <Panel title="วิธียืนยันเพิ่มเติม" subtitle="Google, Authenticator และ Recovery codes เดิมยังใช้งานได้"><div className="additional-factors">
+  return <div className="additional-factors">
     {error&&<p role="alert" className="inline-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
     {!canManage&&<p className="field-hint">เปิด Authenticator และเก็บ Recovery codes ก่อนเพิ่ม Passkeys หรือ LINE</p>}
     {settings?.passkeyEnabled&&<section><h3><Fingerprint size={22}/>Passkeys</h3><p>ใช้การปลดล็อกอุปกรณ์ เช่น ใบหน้า ลายนิ้วมือ หรือ PIN ระบบเก็บเฉพาะกุญแจสาธารณะ ไม่รับข้อมูลชีวมิติ</p>
@@ -43,7 +42,7 @@ export function AdditionalFactors({identity,onIdentityChanged}:{identity:Identit
     })}>{settings.line?'ถอดการผูก LINE':'ผูกบัญชี LINE'}</button>:<p className="field-hint">ผู้ดูแลยังไม่เปิดใช้งาน LINE</p>}</section>
     {settings?.phoneEnabled&&<section><h3 id="phone-verification" tabIndex={-1}><Smartphone size={22}/>ยืนยันเบอร์มือถือ</h3>{settings.phoneVerified?<p className="factor-success"><Check size={18}/>ยืนยันเบอร์แล้ว · ใช้สำหรับยืนยันเบอร์ครั้งแรก ไม่ใช้แทน MFA</p>:<PhoneVerification settings={settings} onVerified={async()=>{await refresh();await onIdentityChanged?.();setNotice('ยืนยันเบอร์มือถือสำเร็จ บันทึกในบัญชีของคุณแล้ว');}}/>}</section>}
     {identity.user.role==='admin'&&<p className="field-hint">Admin ใช้ Passkey หรือ Authenticator ได้ รายการสำคัญใช้ผลยืนยันภายใน 5 นาที</p>}
-  </div></Panel>;
+  </div>;
 }
 
 export function ExtraMfa({identity,onVerified,method,onBusyChange}:{identity:Identity;onVerified:()=>Promise<void>;method:'passkey'|'line'|null;onBusyChange:(busy:boolean)=>void}){

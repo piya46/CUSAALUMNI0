@@ -16,7 +16,7 @@ export function QueueSettings({ applicationId }: { applicationId: string }) {
     try { await api(`/admin/applications/${applicationId}/queue`,'PUT',value); setMessage('บันทึกการตั้งค่าคิวแล้ว'); }
     catch(e) { setMessage((e as Error).message); } finally { setBusy(false); }
   }
-  return <div className="queue-settings"><button className="button secondary" disabled={busy} onClick={load}>{open?'ปิดการตั้งค่าคิว':'ตั้งค่าห้องรอคิว'}</button>
+  return <div className="queue-settings"><button className="button secondary settings-toggle" aria-expanded={open} disabled={busy} onClick={load}>{open?'ปิดการตั้งค่าคิว':'ตั้งค่าห้องรอคิว'}</button>
     {open&&value&&<form onSubmit={e=>{e.preventDefault();void save();}}>
       <p>คิว FIFO ใช้ Redis และยังตรวจสิทธิ์/MFA ครบทุกขั้นตอน หาก Redis ไม่พร้อม ระบบจะหยุดให้ผ่านคิว</p>
       <label className="queue-toggle"><input type="checkbox" checked={value.enabled} onChange={e=>setValue({...value,enabled:e.target.checked})}/>เปิดห้องรอคิวสำหรับ Service นี้</label>

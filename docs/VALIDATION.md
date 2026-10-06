@@ -1,5 +1,15 @@
 # Validation record
 
+## Workspace and notification design — 2026-10-06
+
+- Reorganized all 11 workspace destinations into permission-filtered groups, added a directory and keyword search with Ctrl/Command K, and kept administrative MFA gating intact. Mobile navigation traps/restores keyboard focus, closes with Escape, and makes hidden navigation inert. Updated typography, spacing, responsive cards, service-settings accordions, security groups, and the shared Login/MFA/Consent layout. Reduced-motion preferences remain respected.
+- LINE request/result Flex cards and the HTML OTP email now share the workspace palette and clearer purpose/reference/instruction sections. All four LINE actions remain silent opaque postbacks without `displayText` or `text`; committed results still use one reply and best-effort native chat loading. Plain-text email, multipart encoding, OTP/reference validation, and purpose escaping remain intact.
+- Production builds for server and web passed. Full Playwright regression: **57 passed**. After final security-card spacing, search-keyword and email-preview refinements, the **11 affected browser scenarios passed again**. New coverage checks directory completeness, search/keyboard behavior, mobile focus containment, and every workspace page at 320/768/1024px. Email previews fit 320/390/800px. Desktop and mobile screenshots were visually reviewed.
+- Focused server tests (`line-messages`, `line-webhook`, `hardening`): **11 passed**. The initial sandboxed attempt could not bind a temporary HTTP test socket; rerunning with local socket permission passed. External LINE/Gmail delivery and database calls in these scenarios are mocked.
+- Final navigation checks: **3 passed** after ensuring logout/401 closes the mobile drawer and releases its body-scroll lock. The email preview scenario also passed in fresh browser contexts at each width to avoid stale compositor tiles in resized screenshots. Final web build and `git diff --check` passed.
+- Review artifacts: [OTP email](previews/otp-email.html), [synthetic LINE request/approved/denied payloads](previews/line-mfa.json), and ignored browser screenshots in `test-results/` (dashboard, login, mobile menu, phone reminder, and OTP email).
+- No environment, Gateway contract, database, or production deployment changes. Live LINE rendering/loading and Gmail/Outlook delivery need an on-device check after deployment with a newly issued request; previously sent LINE cards keep their original actions.
+
 ## Quiet LINE postbacks and native loading — 2026-10-06
 
 - Removed `displayText` from new number/deny buttons so tapping does not add an outgoing user message bubble. The opaque postback contract is unchanged. After a bound decision and audit commit, SSO requests LINE's native chat loading indicator (5 seconds, 1-second API timeout) before its existing one-time result reply. This is chat feedback, not an editable loading state on the original Flex button.

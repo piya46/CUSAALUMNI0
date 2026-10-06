@@ -101,13 +101,17 @@ test('admin must reauthenticate to view evidence and explicitly verify before ap
   await review.getByRole('button',{name:'อนุมัติและยกเลิก MFA เดิม'}).click();await expect(review).toBeHidden();expect(approved).toBe(true);expect(views).toBe(2);
 });
 
-test('OTP email preview shows purpose and matching Ref on mobile without overflow',async({page})=>{
+test('OTP email preview shows purpose and matching Ref on phones and desktop without overflow',async({browser})=>{
   const {readFile}=await import('node:fs/promises');
-  await page.setViewportSize({width:390,height:844});
-  await page.setContent(await readFile('docs/previews/otp-email.html','utf8'));
-  await expect(page.getByRole('heading',{name:'รหัสยืนยันของคุณ'})).toBeVisible();
-  await expect(page.getByText('012345',{exact:true})).toBeVisible();await expect(page.getByText('ABC12345',{exact:true})).toBeVisible();
-  await expect(page.getByText(/ยืนยันการเข้าสู่ระบบ CUSA SSO เพื่อเข้าใช้งาน/)).toBeVisible();
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await page.screenshot({path:'test-results/otp-email-mobile.png',fullPage:true});
+  const html=await readFile('docs/previews/otp-email.html','utf8');
+  for(const width of [320,390,800]){
+    const page=await browser.newPage({viewport:{width,height:900}});
+    await page.setContent(html);
+    await expect(page.getByRole('heading',{name:'รหัสยืนยันของคุณ'})).toBeVisible();
+    await expect(page.getByText('012345',{exact:true})).toBeVisible();await expect(page.getByText('ABC12345',{exact:true})).toBeVisible();
+    await expect(page.getByText(/ยืนยันการเข้าสู่ระบบ CUSA SSO เพื่อเข้าใช้งาน/)).toBeVisible();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:`test-results/otp-email-${width}.png`,fullPage:true});
+    await page.close();
+  }
 });

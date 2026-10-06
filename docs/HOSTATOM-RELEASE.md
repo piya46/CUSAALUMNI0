@@ -1,5 +1,9 @@
 # อัปโหลด CUSA SSO รุ่นนี้บน HostAtom / Plesk
 
+ปรับ UI ทั้งเว็บและข้อความ 6 ตุลาคม 2026: เมนูแยกหมวดผู้ใช้/แอป/ความปลอดภัย ค้นหาด้วยชื่อหรือฟังก์ชันผ่าน Ctrl/⌘ K ได้ หน้าแรกมีทางลัดครบทุกเมนูตามสิทธิ์ หน้าตั้งค่าบริการขยายฟอร์มได้ และปรับ Login/MFA/Consent ให้ใช้รูปแบบเดียวกัน พร้อมรองรับจอแคบและ reduced motion การ์ด LINE และอีเมล OTP ใช้โทนเดียวกับเว็บ แยกบริการ รหัสอ้างอิง ขั้นตอน และผลยืนยัน ดู [อีเมลตัวอย่าง](previews/otp-email.html) และ [LINE Flex payload ข้อมูลจำลอง](previews/line-mfa.json)
+
+การปรับ UI รอบนี้ไม่เพิ่ม migration หรือแก้ค่า `.env`/Central webhook ให้ build ทั้ง server และ web แล้ว Restart App เพื่อเปลี่ยนทั้งเว็บและแม่แบบข้อความ ทดสอบด้วยคำขอ LINE/OTP ใหม่ เพราะข้อความที่ส่งไปแล้วไม่เปลี่ยนตาม build ตัวโหลด LINE ใช้ในห้องแชตแบบตัวต่อตัวเมื่อผู้ใช้เปิดแชตอยู่ และหายเมื่อผลลัพธ์มาถึง ตาม [ข้อกำหนด LINE](https://developers.line.biz/en/docs/messaging-api/use-loading-indicator/) ปุ่ม postback ใหม่ไม่มี `displayText` หรือ `text` จึงไม่ส่งข้อความแทนผู้ใช้
+
 ปรับประสบการณ์ LINE 6 ตุลาคม 2026: ปุ่มเลขและปุ่มปฏิเสธไม่เพิ่มข้อความแทนผู้ใช้ในแชตแล้ว ใช้ตัวโหลดของ LINE ระหว่างรอการ์ดผล โดยยังตรวจ MFA และตอบผลครั้งเดียวตามเดิม ตัวโหลดเป็นของห้องแชต ไม่ใช่ปุ่ม Flex ที่หมุน; หาก LINE ไม่แสดงตัวโหลดหรือ API ล้มเหลวยังยืนยันและส่งผลได้ ไม่มี `.env` หรือ migration เพิ่ม Build/Restart แล้วเริ่มคำขอ LINE ใหม่เพื่อตรวจ เพราะการ์ดที่ส่งไปก่อนหน้ายังมีข้อความเดิมอยู่
 
 ปรับปรุง 6 ตุลาคม 2026: LINE MFA รองรับ Central webhook ที่ส่ง raw body และ `X-Line-Signature` เดิม พร้อมตรวจ batch แบบราย event และปฏิเสธ MFA parameter ซ้ำ เพิ่ม `.env` ทางเลือก `LINE_WEBHOOK_DESTINATION` สำหรับ pin OA และ `LINE_WEBHOOK_GATEWAY_TOKEN` สำหรับบังคับ Bearer token จาก Central เพิ่มจากลายเซ็น LINE หากเปิด gateway token ต้องตั้ง destination และให้ Central ส่ง Authorization ด้วยก่อนเปลี่ยนเส้นทางรับจริง ไม่ต้องเพิ่ม migration ดู [สัญญาการส่งต่อและขั้นตอนตั้งค่า](ADDITIONAL-FACTORS.md#central-webhook-ส่ง-raw-body-และลายเซ็น-line-เดิม)
