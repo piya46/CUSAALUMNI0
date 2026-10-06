@@ -53,13 +53,25 @@ export async function lineWebhook(req:Request,res:Response){
   const input=readLineWebhook(req.body,req.get('x-line-signature'),req.get('authorization'));
   for(const item of input.events){
     const event=lineMfaPostback(item);if(!event)continue;
-    const decision=await line.applyLineChoice(event.challengeId,event.subject,event.choice,record(req));
+    let loading:Promise<void>|undefined;
+    let decision;
+    try{
+      decision=await line.applyLineChoice(event.challengeId,event.subject,event.choice,record(req),()=>{
+        if(!event.replyToken)return;
+        // Begin native feedback as soon as the model validates the bound choice,
+        // in parallel with its update/audit/commit. Provider failure is cosmetic.
+        loading=showLineLoading(event.subject).catch(()=>{
+          console.warn(JSON.stringify({event:'auth.line.loading.failure',reason:'LINE_LOADING_UNAVAILABLE'}));
+        });
+      });
+    }finally{
+      // Settle the bounded loading request before replying (also on rollback),
+      // so it is never intentionally left running behind the result response.
+      await loading;
+    }
     // Reply only after the one-time decision and its audit record commit. A delivery
     // failure must never undo MFA, promote the browser, or replay an old choice.
     if(decision&&event.replyToken){
-      // Settle loading before the reply so a late indicator does not follow the result card.
-      try{await showLineLoading(event.subject);}
-      catch{console.warn(JSON.stringify({event:'auth.line.loading.failure',reason:'LINE_LOADING_UNAVAILABLE'}));}
       try{await replyLineDecision(event.replyToken,event.challengeId,decision);}
       catch{console.warn(JSON.stringify({event:'auth.line.reply.failure',reason:'LINE_REPLY_UNAVAILABLE'}));}
     }

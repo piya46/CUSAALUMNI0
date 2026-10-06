@@ -71,7 +71,7 @@ export async function startLineChallenge(sessionId:string,record:AuthAudit){
 }
 // Signed LINE callbacks approve a challenge only. The originating browser must
 // subsequently consume it with its own cookie and CSRF token to receive a session.
-export async function applyLineChoice(id:string,subject:string,choice:string,record:AuthAudit){
+export async function applyLineChoice(id:string,subject:string,choice:string,record:AuthAudit,onValidated?:()=>void){
   return transaction(async conn=>{
     const [candidate]=await query<FactorRow>('SELECT session_id FROM factor_challenges WHERE id=?',[id],conn);
     if(!candidate)return;
@@ -81,6 +81,9 @@ export async function applyLineChoice(id:string,subject:string,choice:string,rec
     const [linked]=await query('SELECT user_id FROM line_identities WHERE user_id=? AND subject_hash=?',[s.user_id,challenge.data.subjectHash],conn);if(!linked)return;
     const match=challenge.data.choices.find((c:{hash:string})=>c.hash===hashToken(choice));
     if(!match)return;
+    // Start optional feedback only for a live, bound choice. The caller owns the
+    // async request; do not wait for a provider while holding database locks.
+    onValidated?.();
     await execute('UPDATE factor_challenges SET status=? WHERE id=?',[match.correct?'approved':'denied',id],conn);
     if(!match.correct)await failure(s.user_id,conn,record);
     await record(conn,match.correct?'auth.line.approved':'auth.line.failure',s.user_id,{challengeId:id});

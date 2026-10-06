@@ -1,5 +1,11 @@
 # Validation record
 
+## LINE loading during decision processing — 2026-10-06
+
+- Corrected the earlier loading timing: it ran after the decision/audit committed and immediately before the result, so it did not cover decision processing. The model now notifies the controller after validating a pending challenge, sender/link, factor fingerprint and opaque choice, before the update. The controller starts the existing native loading request in parallel with the transaction, then waits for that bounded request to settle outside the transaction before sending a committed result. No artificial display delay is added.
+- Focused LINE message/webhook tests: **6 passed**. Tests assert loading starts while the challenge is pending and uncommitted; signature/parameter/sender/link/factor/expiry failures and decided replays remain silent. A deferred loading response proves commit and connection release proceed while LINE is pending, while the result reply waits. Audit rollback emits no result; provider loading/reply failure never changes the decision. Calls use synthetic data and a transactional in-memory adapter, not live LINE or a live database.
+- Server production build passed. No browser, environment, Gateway contract or migration changes. Deployment and an on-device check remain outstanding. Loading can be brief when processing finishes quickly and only appears while the user is viewing the one-to-one OA chat. A rollback can leave the progress indicator visible until its 5-second expiry, without a success card.
+
 ## Workspace and notification design — 2026-10-06
 
 - Reorganized all 11 workspace destinations into permission-filtered groups, added a directory and keyword search with Ctrl/Command K, and kept administrative MFA gating intact. Mobile navigation traps/restores keyboard focus, closes with Escape, and makes hidden navigation inert. Updated typography, spacing, responsive cards, service-settings accordions, security groups, and the shared Login/MFA/Consent layout. Reduced-motion preferences remain respected.
