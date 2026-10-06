@@ -9,8 +9,8 @@ import { hashToken, seal } from '../src/services/crypto.js';
 // Exercise the real signed webhook and model with a transactional in-memory DB
 // adapter. No external account, live database or LINE message is used.
 test('LINE replies only after a bound decision commits; replay, bad signature and rollback never send a result', async t => {
-  const previous={enabled:config.lineMfaEnabled,secret:config.lineMessagingChannelSecret};
-  config.lineMfaEnabled=true;config.lineMessagingChannelSecret='synthetic-webhook-secret';
+  const previous={lineMfaEnabled:config.lineMfaEnabled,lineMessagingChannelSecret:config.lineMessagingChannelSecret,lineWebhookDestination:config.lineWebhookDestination,lineWebhookGatewayToken:config.lineWebhookGatewayToken};
+  Object.assign(config,{lineMfaEnabled:true,lineMessagingChannelSecret:'synthetic-webhook-secret',lineWebhookDestination:`U${'0'.repeat(32)}`,lineWebhookGatewayToken:'g'.repeat(43)});
   const id='00000000-1234-4000-8000-000000000001',subject=`U${'1'.repeat(32)}`,choice='a'.repeat(43);
   let status='pending',snapshot=status,committed=false,failAudit=false,failDelivery=false,correct=true,expired=false;
   let replies=0,failures=0,transactions=0;
@@ -36,23 +36,30 @@ test('LINE replies only after a bound decision commits; replay, bad signature an
     return Response.json({});
   });
   const warnings:string[]=[];t.mock.method(console,'warn',(message:string)=>warnings.push(message));
-  async function deliver({sender=subject,badSignature=false}={}){
-    const raw=Buffer.from(JSON.stringify({events:[{type:'postback',timestamp:Date.now(),replyToken:'synthetic-reply',source:{type:'user',userId:sender},postback:{data:`cusa_mfa=${id}&choice=${choice}`}}]}));
+  async function deliver({sender=subject,badSignature=false,data=`cusa_mfa=${id}&choice=${choice}`,redelivery=false}={}){
+    const raw=Buffer.from(JSON.stringify({destination:config.lineWebhookDestination,events:[
+      {type:'accountLink',link:{result:'failed'}},null,{type:'postback',source:null},
+      {type:'message',message:{type:'text',text:'42'}},
+      {type:'postback',timestamp:Date.now(),replyToken:'synthetic-reply',source:{type:'user',userId:sender},postback:{data},deliveryContext:{isRedelivery:redelivery}},
+      {type:'follow'},
+    ]}));
     const signature=createHmac('sha256',config.lineMessagingChannelSecret).update(raw).digest('base64');
-    const req:any={body:raw,ip:'127.0.0.1',socket:{remoteAddress:'127.0.0.1'},get:(name:string)=>name==='x-line-signature'?(badSignature?'invalid':signature):undefined};
+    const req:any={body:raw,ip:'127.0.0.1',socket:{remoteAddress:'127.0.0.1'},get:(name:string)=>name==='x-line-signature'?(badSignature?'invalid':signature):name==='authorization'?`Bearer ${config.lineWebhookGatewayToken}`:undefined};
     let response:unknown;await lineWebhook(req,{json:(value:unknown)=>{response=value;}} as any);assert.deepEqual(response,{ok:true});
   }
   try{
     await assert.rejects(deliver({badSignature:true}),{code:'INVALID_SIGNATURE'});assert.equal(transactions,0);assert.equal(replies,0);
+    await deliver({data:`cusa_mfa=${id}&choice=${choice}&%63hoice=${choice}`});assert.equal(transactions,0);assert.equal(status,'pending');
+    await deliver({data:`cusa_mfa=${id}&choice=${'b'.repeat(43)}`});assert.equal(status,'pending');assert.equal(replies,0);
     await deliver({sender:`U${'2'.repeat(32)}`});assert.equal(status,'pending');assert.equal(replies,0);
     expired=true;await deliver();assert.equal(status,'pending');assert.equal(replies,0);expired=false;
     failAudit=true;await assert.rejects(deliver(),{message:'audit unavailable'});assert.equal(status,'pending');assert.equal(replies,0);failAudit=false;
-    await deliver();assert.equal(status,'approved');assert.equal(replies,1);
-    await deliver();assert.equal(status,'approved');assert.equal(replies,1);
+    await deliver({redelivery:true});assert.equal(status,'approved');assert.equal(replies,1);
+    await deliver({redelivery:true});assert.equal(status,'approved');assert.equal(replies,1);
     status='pending';correct=false;await deliver();assert.equal(status,'denied');assert.equal(replies,2);assert.equal(failures,1);
     await deliver();assert.equal(failures,1);assert.equal(replies,2);
     status='pending';correct=true;failDelivery=true;await deliver();assert.equal(status,'approved');assert.equal(replies,3);
     assert.equal(warnings.length,1);assert.ok(!warnings.join('').includes('private-provider-token'));
     await deliver();assert.equal(replies,3);
-  }finally{config.lineMfaEnabled=previous.enabled;config.lineMessagingChannelSecret=previous.secret;}
+  }finally{Object.assign(config,previous);}
 });

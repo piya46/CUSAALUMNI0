@@ -24,6 +24,8 @@ const schema = z.object({
   LINE_MFA_ENABLED:z.enum(['true','false']).default('false'),
   LINE_LOGIN_CHANNEL_ID:z.string().default(''), LINE_LOGIN_CHANNEL_SECRET:z.string().default(''),
   LINE_MESSAGING_CHANNEL_SECRET:z.string().default(''), LINE_CHANNEL_ACCESS_TOKEN:z.string().default(''),
+  LINE_WEBHOOK_DESTINATION:z.string().regex(/^$|^U[0-9a-f]{32}$/).default(''),
+  LINE_WEBHOOK_GATEWAY_TOKEN:z.string().regex(/^$|^[A-Za-z0-9_-]{43}$/).default(''),
   FIREBASE_PHONE_ENABLED:z.enum(['true','false']).default('false'),
   FIREBASE_PHONE_REQUIRED:z.enum(['true','false']).default('false'),
   FIREBASE_PROJECT_ID:z.string().default(''), FIREBASE_API_KEY:z.string().default(''),
@@ -50,6 +52,7 @@ const schema = z.object({
 });
 const env = schema.parse(process.env);
 if (env.LINE_MFA_ENABLED==='true' && ![env.LINE_LOGIN_CHANNEL_ID,env.LINE_LOGIN_CHANNEL_SECRET,env.LINE_MESSAGING_CHANNEL_SECRET,env.LINE_CHANNEL_ACCESS_TOKEN].every(Boolean)) throw new Error('LINE MFA requires both LINE Login and Messaging API credentials');
+if (env.LINE_MFA_ENABLED==='true' && env.LINE_WEBHOOK_GATEWAY_TOKEN && !env.LINE_WEBHOOK_DESTINATION) throw new Error('LINE webhook gateway authentication requires LINE_WEBHOOK_DESTINATION');
 if (env.FIREBASE_PHONE_ENABLED==='true' && ![env.FIREBASE_PROJECT_ID,env.FIREBASE_API_KEY,env.FIREBASE_AUTH_DOMAIN,env.FIREBASE_APP_ID,env.FIREBASE_CLIENT_EMAIL,env.FIREBASE_PRIVATE_KEY].every(Boolean)) throw new Error('Firebase phone verification requires web config and a dedicated server service account');
 if (env.FIREBASE_PHONE_REQUIRED==='true' && env.FIREBASE_PHONE_ENABLED!=='true') throw new Error('Required phone verification needs FIREBASE_PHONE_ENABLED=true');
 if (env.NODE_ENV==='production' && process.env.FIREBASE_AUTH_EMULATOR_HOST) throw new Error('Firebase Auth emulator is forbidden in production');
@@ -72,6 +75,7 @@ export const config = {
   passkeyEnabled:env.PASSKEY_ENABLED==='true',lineMfaEnabled:env.LINE_MFA_ENABLED==='true',
   lineLoginChannelId:env.LINE_LOGIN_CHANNEL_ID,lineLoginChannelSecret:env.LINE_LOGIN_CHANNEL_SECRET,
   lineMessagingChannelSecret:env.LINE_MESSAGING_CHANNEL_SECRET,lineChannelAccessToken:env.LINE_CHANNEL_ACCESS_TOKEN,
+  lineWebhookDestination:env.LINE_WEBHOOK_DESTINATION,lineWebhookGatewayToken:env.LINE_WEBHOOK_GATEWAY_TOKEN,
   firebasePhoneEnabled:env.FIREBASE_PHONE_ENABLED==='true',firebasePhoneRequired:env.FIREBASE_PHONE_REQUIRED==='true',
   firebaseProjectId:env.FIREBASE_PROJECT_ID,firebaseApiKey:env.FIREBASE_API_KEY,firebaseAuthDomain:env.FIREBASE_AUTH_DOMAIN,firebaseAppId:env.FIREBASE_APP_ID,
   firebaseClientEmail:env.FIREBASE_CLIENT_EMAIL,firebasePrivateKey:env.FIREBASE_PRIVATE_KEY.replace(/\\n/g,'\n'),

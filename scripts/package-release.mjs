@@ -18,7 +18,7 @@ try {
   if (build.status !== 0) throw new Error('Production build failed; no deployment package was created.');
   const { parse } = createRequire(join(root, 'server/package.json'))('dotenv');
   const local = await readFile(join(root, '.env'), 'utf8').then(parse).catch(error => { if (error.code !== 'ENOENT') throw error; return {}; });
-  const secretName = /^(METRICS_TOKEN|LINE_LOGIN_CHANNEL_SECRET|LINE_MESSAGING_CHANNEL_SECRET|LINE_CHANNEL_ACCESS_TOKEN|FIREBASE_PRIVATE_KEY|DB_PASSWORD|SESSION_SECRET|ENCRYPTION_KEY|MFA_EVIDENCE_KEY|GOOGLE_CLIENT_SECRET|GMAIL_CLIENT_SECRET|GMAIL_REFRESH_TOKEN|GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY|INSTALL_TOKEN|REDIS_URL)$/;
+  const secretName = /^(METRICS_TOKEN|LINE_LOGIN_CHANNEL_SECRET|LINE_MESSAGING_CHANNEL_SECRET|LINE_CHANNEL_ACCESS_TOKEN|LINE_WEBHOOK_GATEWAY_TOKEN|FIREBASE_PRIVATE_KEY|DB_PASSWORD|SESSION_SECRET|ENCRYPTION_KEY|MFA_EVIDENCE_KEY|GOOGLE_CLIENT_SECRET|GMAIL_CLIENT_SECRET|GMAIL_REFRESH_TOKEN|GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY|INSTALL_TOKEN|REDIS_URL)$/;
   const secrets = [...Object.entries(local), ...Object.entries(process.env)]
     .filter(([key, value]) => secretName.test(key) && value).map(([, value]) => value);
   const output = join(root, 'releases');

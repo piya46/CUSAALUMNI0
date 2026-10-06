@@ -42,13 +42,15 @@ Email OTP ไม่กลายเป็น fallback สำหรับบัญ
 | `LINE_LOGIN_CHANNEL_SECRET` | LINE Login channel เดียวกัน → Channel secret |
 | `LINE_MESSAGING_CHANNEL_SECRET` | Messaging API channel ของ OA → Basic settings → Channel secret |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API channel → Messaging API → Channel access token; token ต้องไม่หมดอายุ/ถูกถอน |
+| `LINE_WEBHOOK_DESTINATION` | แนะนำให้กำหนด bot `userId` ของ OA (`U` + hex ตัวเล็ก 32 ตัว); อ่านได้จาก `GET /v2/bot/info` ไม่ใช่ Channel ID หรือ `@basicId` |
+| `LINE_WEBHOOK_GATEWAY_TOKEN` | ทางเลือกสำหรับ Central → SSO: token สุ่ม 32 bytes แบบ base64url ยาว 43 ตัว ต้องตั้ง `LINE_WEBHOOK_DESTINATION` ด้วย |
 | `LINE_MFA_ENABLED` | ใส่ค่าครบแล้วเปลี่ยนเป็น `true` และ Restart App |
 
 ตั้งค่าผู้ให้บริการ:
 
 1. LINE Login → Callback URL: `https://sso.reunion.scicu-alumni.com/api/auth/line/callback`
 2. เชื่อม Official Account ที่ถูกต้องกับ LINE Login channel และเผยแพร่ channel ตามกลุ่มผู้ทดสอบ/ผู้ใช้จริงที่ต้องการ
-3. Messaging API → Webhook URL: `https://sso.reunion.scicu-alumni.com/api/auth/line/webhook` เปิด Use webhook และ Webhook redelivery แล้วกด Verify
+3. Messaging API → Webhook URL: `https://sso.reunion.scicu-alumni.com/api/auth/line/webhook` เมื่อรับตรงจาก LINE หรือ URL ของ Central เมื่อใช้วิธีด้านล่าง เปิด Use webhook และ Webhook redelivery แล้วกด Verify
 4. ตั้ง webhook ผ่าน HTTPS, proxy ต้องไม่แก้ raw JSON body; ไม่เปิด CORS หรือข้าม CSRF ให้ API อื่นเพื่อแก้ webhook
 5. ผู้ใช้เพิ่มเพื่อน OA, เข้า CUSA SSO ด้วย Google ตามด้วย TOTP หรือ Passkey, หน้า **ความปลอดภัย → ผูกบัญชี LINE** จากนั้นยืนยัน LINE Login
 6. ล็อกเอาต์และเข้าใหม่ เลือก **ยืนยันผ่าน LINE** หน้าเว็บจะแสดงเลข 2 หลัก ข้อความ LINE มีเลขให้เลือก 3 ค่าและปุ่มปฏิเสธ เลือกค่าให้ตรงกัน คำขอหมดอายุ 3 นาที
@@ -60,6 +62,72 @@ Webhook ตรวจ HMAC-SHA256 บน **raw body** ก่อนอ่าน JS
 ขอใหม่อย่างน้อย 60 วินาที ตรวจใน MariaDB ระดับบัญชีแม้ reload/เปลี่ยน session และจำกัด 3 ครั้งต่อ 10 นาทีทั้ง user/IP; ส่งล้มเหลวก็ยังคง cooldown ไม่มี auto-push เมื่อเปิดหน้า MFA ผู้ใช้เป็นผู้กดขอเอง งบ/จำนวนข้อความ LINE ต้องตั้งและติดตามที่ผู้ให้บริการ Number Matching ไม่ได้มีความต้าน phishing เทียบเท่า WebAuthn
 
 อ้างอิง: [LINE Login](https://developers.line.biz/en/docs/line-login/integrate-line-login/), [ตรวจ ID token](https://developers.line.biz/en/docs/line-login/verify-id-token/), [ตรวจ Webhook signature](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)
+
+### Central webhook: ส่ง raw body และลายเซ็น LINE เดิม
+
+เส้นทางที่รองรับคือ `LINE → Central → POST /api/auth/line/webhook` ผ่าน HTTPS โดย SSO ตรวจ `X-Line-Signature` ด้วย `LINE_MESSAGING_CHANNEL_SECRET` ของ OA เองทุกครั้ง Central ต้องเก็บ raw bytes ก่อน JSON parser และตรวจลายเซ็นก่อน routing ห้ามตัด `events`, stringify ใหม่, เติม field, เปลี่ยน timestamp หรือเซ็นข้อมูลที่แก้แล้วด้วย LINE secret เพื่อส่งต่อ SSO ไม่รับ `X-Webhook-Verified`, IP หรือ cookie เป็นหลักฐานแทนลายเซ็น
+
+ตั้งค่า SSO และ Central:
+
+1. กำหนด `LINE_WEBHOOK_DESTINATION` ใน SSO ให้ตรง bot `userId` ของ OA จาก [Get bot info](https://developers.line.biz/en/reference/messaging-api/#get-bot-info) และกำหนด route ของ OA นั้นใน Central ไว้ล่วงหน้า ห้ามรับ URL ปลายทางจาก event
+2. แนะนำให้สร้าง token เฉพาะ Central → SSO ด้วย `node -e 'console.log(require("node:crypto").randomBytes(32).toString("base64url"))'` แล้วเก็บใน secret configuration ของทั้งสองระบบ ใช้เป็น `LINE_WEBHOOK_GATEWAY_TOKEN` ฝั่ง SSO ห้ามใช้ซ้ำกับ Channel secret, Channel access token, session secret หรือ service API key
+3. Central เพิ่ม `Authorization: Bearer <gateway token>` จาก configuration ของตัวเองทุกครั้ง ห้ามคัดลอก Authorization จาก request ขาเข้า พร้อมส่ง `Content-Type: application/json` และ `X-Line-Signature` เดิม ไม่ส่ง cookie หรือ forwarded headers จากผู้ใช้ต่อโดยไม่ตรวจ
+4. ตั้ง LINE Developers Webhook URL เป็น URL ของ Central แล้วให้ Central ส่ง verification request ที่มี `events: []` ไป SSO ด้วย เพื่อตรวจทั้งเส้นทาง เมื่อเปิด gateway token แล้ว LINE ที่เรียก SSO ตรงโดยไม่มี token จะถูกปฏิเสธด้วย `401`
+5. Build/Restart SSO และทดสอบก่อนเปิด traffic จริง การหมุน gateway token ต้องประสานทั้งสองระบบ หากค่าไม่ตรงให้แก้ configuration และ retry ภายในอายุ MFA ไม่ปิดการตรวจลายเซ็นเพื่อแก้ปัญหา
+
+หากปล่อย gateway token ว่าง การรับตรงจาก LINE ยังคงทำงานและยังต้องมีลายเซ็นที่ถูกต้อง การ pin destination เป็นตัวเลือกสำหรับระบบเดิม แต่บังคับเมื่อเปิด gateway token; `deploy:check` เตือนเมื่อเปิด LINE MFA โดยยังไม่ pin OA ไม่มีการแก้ `.env` จริงให้อัตโนมัติ
+
+ตัวอย่างส่วนส่งต่อใน Central **หลังตรวจลายเซ็นและเลือก route แล้ว** (`rawBody` คือ Buffer เดิมทั้งก้อน, `lineSignature` คือ header เดิมที่ตรวจแล้ว และ `gatewayToken` มาจาก secret configuration):
+
+```js
+const response = await fetch(
+  'https://sso.reunion.scicu-alumni.com/api/auth/line/webhook',
+  {
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Line-Signature': lineSignature,
+      Authorization: `Bearer ${gatewayToken}`,
+    },
+    body: rawBody,
+  },
+);
+// Handle acknowledgement/retry according to the status table below.
+```
+
+SSO รับ uncompressed JSON สูงสุด 64 KiB และ 100 events ต่อ request หาก batch ผสมเกินเพดาน ห้ามแบ่ง JSON แล้วแนบ signature เดิม ต้องปรับขีดจำกัดทั้งสองฝั่งหลังประเมินโหลดหรือออกแบบ protocol ใหม่ก่อนใช้งาน ไม่รองรับ envelope ที่ Central แปลงเองใน endpoint นี้
+
+กติกา routing และการรับ MFA:
+
+| กรณี | Central / SSO |
+| --- | --- |
+| `events: []` | ส่งตรวจถึง SSO; เมื่อ credentials และ destination ถูกต้องตอบ `200 {"ok":true}` |
+| `event.type === "postback"` และ `new URLSearchParams(event.postback.data).has("cusa_mfa")` | Central จองเป็นงาน SSO แม้ข้อมูลผิดรูปแบบ ห้าม fallback ไป Chatbot |
+| MFA postback ที่ SSO รับ | `source.type=user`, `userId` รูปแบบ `U[0-9a-f]{32}`, timestamp เป็นจำนวนเต็มไม่ติดลบต่างจากเวลา server ไม่เกิน 180,000 ms, `mode` ต้องไม่เป็น `standby` |
+| `postback.data` | ยาวไม่เกิน 300 ตัวอักษร มีเพียง `cusa_mfa=<UUID>` และ `choice=<base64url 43 ตัว>` อย่างละหนึ่ง key; สลับลำดับได้ แต่ key ซ้ำรวมถึงแบบ percent-encoded หรือ key เกินจะถูกข้าม |
+| `message`, `follow`, `unfollow`, `accountLink` หรือ postback ของบอต | จัดการตาม routing ของบอต; ไม่ใช่หลักฐาน MFA การผูก LINE ของ SSO ใช้ OAuth callback เดิม |
+| batch มีทั้ง MFA และ event อื่น | ส่ง raw body เดิมให้ SSO ครั้งเดียวเมื่อมีงาน SSO; SSO ตรวจทีละ event และข้าม event ที่ไม่เกี่ยวข้อง/ผิดรูปแบบ แม้ไม่มี `source` โดยยังประมวลผล MFA ที่ถูกต้องใน batch ต่อได้ |
+
+Central ต้องตรวจชนิดข้อมูลก่อนใช้ `URLSearchParams`; ฝั่ง Chatbot ต้องตัด event namespace `cusa_mfa` ออกจากการประมวลผลและจาก prompt/log ของบอต ห้ามตัดสินจากเลขสองหลัก ข้อความ `displayText`, Ref หรือสถานะว่าผู้ใช้เคยผูก LINE การเลือกเลขและปุ่มปฏิเสธต่างใช้ opaque `choice`; SSO เทียบกับ challenge และบัญชีที่ผูกเท่านั้น
+
+ให้ SSO เป็นผู้ใช้ `replyToken` ของ MFA event เพียงระบบเดียว Central และ Chatbot ไม่ตอบ event นั้น เก็บ reply token เดิมไว้ใน raw body; token ไม่มี/ผิดรูปแบบไม่ทำให้ผล MFA ที่ถูกต้องย้อนกลับ การบันทึกผลกับ audit อยู่ใน transaction และ challenge เปลี่ยนผลได้ครั้งเดียว การกดซ้ำ/ส่งซ้ำไม่สร้าง session หรือส่งผลซ้ำ Browser เดิมต้อง consume challenge ด้วย cookie/CSRF ตาม flow เดิม
+
+| HTTP จาก SSO | การจัดการใน Central |
+| --- | --- |
+| `200 {"ok":true}` | ประมวลผล request เสร็จ รวมถึงกรณีข้าม event; ไม่ใช่หลักฐานว่า MFA ผ่าน ให้ browser อ่านสถานะจาก SSO |
+| `400` | JSON/envelope ผิด เช่น ไม่มี `destination` หรือ events เกิน 100; แก้ contract ไม่ retry ข้อมูลเดิมวนซ้ำ |
+| `401` | gateway token, LINE signature หรือ destination ไม่ถูกต้อง; แจ้งเตือนโดยไม่ log credentials และห้าม fallback ไป Chatbot |
+| `404` | LINE MFA ปิดอยู่; ตรวจ configuration |
+| `413` / `415` | เกิน 64 KiB / มี Content-Encoding ที่ไม่รองรับ; แก้การส่งต่อ ไม่ retry เดิมวนซ้ำ |
+| `429`, `5xx` หรือ timeout | retry แบบจำกัดจำนวนและ backoff เคารพ `Retry-After` ภายในอายุ challenge 3 นาที ใช้ raw body/signature เดิมและไม่แก้ timestamp |
+
+อย่า mark event ว่าสำเร็จก่อน SSO ตอบสำเร็จ หากใช้คิว Central จะตอบ LINE ว่ารับแล้วได้หลังเก็บงานลง durable queue ที่กู้กลับได้เท่านั้น ใช้ `(destination, webhookEventId, consumer)` แยกสถานะงาน SSO/Chatbot สำหรับ dedup และอย่าทิ้ง `isRedelivery=true` ทุกครั้ง เพราะครั้งแรกอาจยังไม่สำเร็จ หาก SSO commit แล้วแต่ response สูญหาย retry จะไม่ทำ MFA ซ้ำ; reply เป็น best effort และไม่ได้รับประกันส่งการ์ดซ้ำหลังส่งล้มเหลว
+
+ไม่บันทึก raw body, `choice`, `replyToken`, signature หรือ Authorization ลง access/application logs; หากจำเป็นต้องเก็บใน retry queue ให้เข้ารหัส จำกัดสิทธิ์และลบหลังจบงานหรือหมดอายุ Central ไม่ต้องได้รับ CUSA session secret หรือสิทธิ์ฐานข้อมูล SSO ส่วน `TRUST_PROXY` ต้องตรง proxy chain จริง ไม่ตั้งเป็นเชื่อทุก IP เพื่อแก้ปัญหา Central และควรตรวจโหลดกับ rate limit เดิม 600 requests/นาที/IP โดยไม่ใช้ X-Forwarded-For ที่ผู้ส่งกำหนดเองเพื่อข้ามข้อจำกัด
+
+อ้างอิง: [LINE signature และ raw body](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/), [Webhook redelivery](https://developers.line.biz/en/docs/messaging-api/receiving-messages/#redelivered-webhooks)
 
 ## Firebase SMS
 

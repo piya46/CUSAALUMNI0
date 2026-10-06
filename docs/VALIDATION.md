@@ -1,5 +1,13 @@
 # Validation record
 
+## LINE MFA through a central webhook — 2026-10-06
+
+- SSO retains independent HMAC verification of the original raw LINE body. Added optional OA destination pinning and an additional Central-to-SSO bearer credential; gateway authentication requires a pinned destination and never replaces the LINE signature. No private `.env`, database schema, dependency, production host or Central service was modified.
+- Webhook envelopes require a valid bot destination and at most 100 events. Each MFA event is validated separately, so unrelated or malformed events (including failed account-link events without a source) do not block valid MFA in the same batch. Duplicate/encoded duplicate or extra postback parameters, invalid senders/timestamps and standby events are skipped. The HTTP endpoint bounds uncompressed bodies to 64 KiB and reports oversized/encoded requests as 413/415.
+- Focused LINE and deployment checks: **13 passed, 0 failed**. Includes actual loopback HTTP ingress, both credential checks, raw-body alteration/reserialization, wrong destination, empty verification, mixed batches, ambiguous parameters, sender/challenge binding, replay/redelivery, audit rollback and best-effort replies. Database and LINE provider calls in these tests are mocked; no real message is sent. An initial HTTP run could not bind a port in the sandbox; the complete focused run passed with local socket access.
+- Server regression with `RUN_DB_TESTS=0`: **90 passed, 0 failed, 48 skipped** (plus an opt-in database suite skipped). The focused tests overlap this run and are not additional distinct tests. The skipped infrastructure/provider suites are not claimed as validated. Server typecheck/build, release-file allowlist test and whitespace checks pass.
+- [Central forwarding contract](ADDITIONAL-FACTORS.md#central-webhook-ส่ง-raw-body-และลายเซ็น-line-เดิม) covers gateway configuration, exclusive MFA reply ownership, acknowledgement/retry, secret handling and proxy limits. Real Central compatibility, HostAtom forwarding of Authorization/raw bytes and end-to-end LINE verification remain deployment checks; this change does not claim the external Central implementation has been audited.
+
 ## Verified phone uniqueness — 2026-10-05
 
 - Phone binding now relies directly on the existing unique user/phone/Firebase UID indexes and handles a duplicate insert inside the transaction. The losing request consumes its challenge and records the failure atomically; it does not replace the owner or expose the owner's identity. Other database errors remain failures, and failed audit writes roll back the transaction.

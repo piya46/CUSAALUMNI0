@@ -36,7 +36,14 @@ export function createApp() {
     if(req.path==='/auth/line/webhook')return webhookLimit(req,res,next);
     return ['/sso/token','/sso/introspect','/sso/revoke','/sso/activity'].includes(req.path)?machineLimit(req,res,next):browserLimit(req,res,next);
   });
-  app.post('/api/auth/line/webhook',requireConfigured,auditAvailability,express.raw({type:'application/json',limit:'64kb'}),lineWebhook);
+  const webhookBody=express.raw({type:'application/json',limit:'64kb',inflate:false});
+  app.post('/api/auth/line/webhook',requireConfigured,auditAvailability,(req,res,next)=>{
+    webhookBody(req,res,error=>{
+      if(error?.type==='entity.too.large')return next(new HttpError(413,'Webhook body too large','WEBHOOK_TOO_LARGE'));
+      if(error?.type==='encoding.unsupported')return next(new HttpError(415,'Webhook content encoding is not supported','INVALID_WEBHOOK_ENCODING'));
+      next(error);
+    });
+  },lineWebhook);
   app.use(express.json({limit:'16kb'}));
   app.use(express.urlencoded({extended:false,limit:'16kb'}));
   app.use(cookieParser());

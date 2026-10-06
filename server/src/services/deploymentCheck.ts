@@ -37,7 +37,15 @@ export async function checkDeployment(config: Settings, root: string, nodeVersio
     } catch { add('REDIS_URL', false, 'REDIS_URL is not a valid Redis TCP URL.'); }
   }
   warn('PROXY_REVIEW', 'Verify TRUST_PROXY and forwarded-header sanitization against the actual hosting proxy chain.');
-  if(config.lineMfaEnabled)warn('LINE_PROVIDER', 'Verify LINE Login callback and signed Messaging webhook on the same LINE Provider, OA friendship and message quota.');
+  if(config.lineMfaEnabled){
+    warn('LINE_PROVIDER', 'Verify LINE Login callback and signed Messaging webhook on the same LINE Provider, OA friendship and message quota.');
+    if(config.lineWebhookDestination)add('LINE_WEBHOOK_DESTINATION', /^U[0-9a-f]{32}$/.test(config.lineWebhookDestination), 'Pin the webhook destination to the Messaging API bot user ID.');
+    else warn('LINE_WEBHOOK_DESTINATION', 'Set LINE_WEBHOOK_DESTINATION to pin the OA, especially when sharing a central webhook.');
+    if(config.lineWebhookGatewayToken){
+      add('LINE_WEBHOOK_GATEWAY', Boolean(config.lineWebhookDestination)&&/^[A-Za-z0-9_-]{43}$/.test(config.lineWebhookGatewayToken), 'Gateway authentication requires a pinned destination and a dedicated random 32-byte base64url token.');
+      warn('LINE_WEBHOOK_FORWARDING', 'Central must forward unchanged raw bytes and the original LINE signature over HTTPS, add its own Authorization header, and reserve MFA replies for SSO.');
+    }
+  }
   if(config.firebasePhoneEnabled)warn('FIREBASE_PROVIDER', 'Verify Phone provider, authorized HTTPS domain, SMS region/quota policy and service-account permissions; remove test phone numbers from production.');
   if(config.firebasePhoneRequired)warn('PHONE_POLICY', 'Phone verification applies to new accounts; confirm the privacy basis and support path before enforcing.');
 

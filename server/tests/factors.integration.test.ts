@@ -15,7 +15,7 @@ import * as phone from '../src/models/phoneModel.js';
 import { revokeUserSessions } from '../src/models/adminModel.js';
 const enabled=process.env.RUN_DB_TESTS==='1',owned:{userId:string;email:string}[]=[],apps:string[]=[];
 const realFetch=globalThis.fetch;
-if(enabled){config.configured=true;config.passkeyEnabled=true;config.lineMfaEnabled=true;config.firebasePhoneEnabled=true;config.sessionSecret=`factors-test-${randomUUID()}`;config.lineMessagingChannelSecret='test-webhook-secret';config.lineLoginChannelId='test-line-channel';}
+if(enabled){config.configured=true;config.passkeyEnabled=true;config.lineMfaEnabled=true;config.firebasePhoneEnabled=true;config.sessionSecret=`factors-test-${randomUUID()}`;config.lineMessagingChannelSecret='test-webhook-secret';config.lineLoginChannelId='test-line-channel';config.lineWebhookDestination=`U${'0'.repeat(32)}`;config.lineWebhookGatewayToken='';}
 const audit:AuthAudit=(conn,event,target,metadata)=>recordAudit({actorId:null,actorEmail:null,sessionId:null,userAgent:'factors-test',event,target:target??null,ip:'127.0.0.1',metadata,status:event.endsWith('failure')?'failure':'success'},conn);
 async function fixture(kind:'full'|'pending'='full',role='user'){
   const userId=randomUUID(),email=`factors-${userId}@example.test`,sessionId=randomUUID(),token=randomToken(),csrf=randomToken();owned.push({userId,email});
@@ -62,7 +62,7 @@ test('signed LINE Number Matching binds sender and browser, has persistent coold
     await assert.rejects(line.startLineChallenge(s.sessionId,audit),{message:'OTP_COOLDOWN'});
     const action=sent.messages[0].contents.footer.contents.flatMap((item:any)=>item.contents?item.contents.map((button:any)=>button.action):[item.action]).find((a:any)=>a.label===issued.number),choice=new URLSearchParams(action.data).get('choice')!;
     await line.applyLineChoice(issued.challengeId,`U${'0'.repeat(32)}`,choice,audit);assert.equal((await line.lineChallengeStatus(s.sessionId,issued.challengeId)).status,'pending');
-    const app=createApp(),body=JSON.stringify({events:[{type:'postback',timestamp:Date.now(),source:{type:'user',userId:s.subject},postback:{data:action.data}}]});
+    const app=createApp(),body=JSON.stringify({destination:config.lineWebhookDestination,events:[{type:'postback',timestamp:Date.now(),source:{type:'user',userId:s.subject},postback:{data:action.data}}]});
     const signature=createHmac('sha256',config.lineMessagingChannelSecret).update(body).digest('base64');
     await request(app).post('/api/auth/line/webhook').set('Content-Type','application/json').set('x-line-signature',signature).send(body+' ').expect(401);
     await request(app).post('/api/auth/line/webhook').set('Content-Type','application/json').set('x-line-signature',signature).send(body).expect(200);

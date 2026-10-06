@@ -39,3 +39,20 @@ test('evidence path validation rejects public paths and symlinked public roots b
     const privatePath=await resolveEvidenceDirectory(join(root,'var/new-private-dir'),root);assert.ok(privatePath.endsWith('var/new-private-dir'));
   }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
 });
+
+test('LINE deployment checks require destination pinning with gateway auth and never expose credentials',async()=>{
+  const {root,config}=await fixture();
+  try{
+    config.lineMfaEnabled=true;config.lineWebhookDestination='';config.lineWebhookGatewayToken='';
+    let report=await checkDeployment(config,root,'22.12.0');
+    assert.ok(report.checks.some(c=>c.code==='LINE_WEBHOOK_DESTINATION'&&c.status==='warning'));
+    config.lineWebhookGatewayToken='g'.repeat(43);
+    report=await checkDeployment(config,root,'22.12.0');
+    assert.ok(report.checks.some(c=>c.code==='LINE_WEBHOOK_GATEWAY'&&c.status==='fail'));
+    config.lineWebhookDestination=`U${'0'.repeat(32)}`;
+    report=await checkDeployment(config,root,'22.12.0');
+    assert.equal(report.ok,true);
+    assert.ok(report.checks.some(c=>c.code==='LINE_WEBHOOK_GATEWAY'&&c.status==='pass'));
+    assert.ok(!JSON.stringify(report).includes(config.lineWebhookGatewayToken));
+  }finally{await rm(root,{recursive:true,force:true});}
+});
