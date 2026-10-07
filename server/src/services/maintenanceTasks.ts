@@ -10,7 +10,7 @@ import type { JobOutcome } from './backgroundScheduler.js';
 const expiryTables = [
   ['factor_challenges', 'expires_at'], ['sessions', 'expires_at'], ['oauth_flows', 'expires_at'],
   ['otp_challenges', 'expires_at'], ['mfa_enrollments', 'expires_at'],
-  ['authorization_codes', 'expires_at'], ['access_tokens', 'expires_at'], ['rate_limits', 'reset_at'],
+  ['authorization_codes', 'expires_at'], ['access_tokens', 'expires_at'], ['sso_refresh_families','expires_at'], ['rate_limits', 'reset_at'],
   ['sso_consents', 'expires_at'], ['application_invitations','expires_at'], ['service_activity_receipts','expires_at'],
 ] as const;
 
@@ -32,9 +32,10 @@ export async function checkOperations(connection: PoolConnection) {
   const queue = await getAuditQueueHealth(connection);
   await query('SELECT phone_required FROM users LIMIT 0', [], connection);
   await query('SELECT queue_enabled,queue_rate,queue_capacity,queue_ip_limit FROM applications LIMIT 0', [], connection);
-  for (const table of ['passkeys', 'line_identities', 'phone_identities', 'factor_challenges', 'sso_consents', 'sso_login_accounts', 'application_access_policies', 'application_invitations', 'service_activity_receipts'])
+  for (const table of ['passkeys', 'line_identities', 'phone_identities', 'factor_challenges', 'sso_consents', 'sso_login_accounts', 'application_access_policies', 'application_invitations', 'service_activity_receipts', 'sso_refresh_families', 'refresh_tokens'])
     await query(`SELECT 1 FROM ${table} LIMIT 0`, [], connection);
   await query('SELECT allowed_claim_scopes,sharing_purpose,sharing_version FROM applications LIMIT 0',[],connection);
+  await query('SELECT refresh_family_id FROM access_tokens LIMIT 0',[],connection);
   const [server] = await query<{ zone: string; role: string }>('SELECT @@session.time_zone AS zone,CURRENT_ROLE() AS role', [], connection);
   // MariaDB can include authentication hashes in raw SHOW GRANTS output.
   const grants = await query<Record<string, string>>('SHOW GRANTS FOR CURRENT_USER', [], connection);

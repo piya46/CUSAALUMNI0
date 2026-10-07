@@ -45,3 +45,7 @@ GRANT SELECT ON `scicualu_alumni`.`sso_login_accounts` TO 'cusa_runtime'@'localh
 GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`application_access_policies` TO 'cusa_runtime'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`application_invitations` TO 'cusa_runtime'@'localhost';
 GRANT SELECT, INSERT, DELETE ON `scicualu_alumni`.`service_activity_receipts` TO 'cusa_runtime'@'localhost';
+
+-- Session-bound rotating refresh tokens (migration 010).
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`sso_refresh_families` TO 'cusa_runtime'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `scicualu_alumni`.`refresh_tokens` TO 'cusa_runtime'@'localhost';

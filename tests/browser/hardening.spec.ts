@@ -51,6 +51,16 @@ test('API documentation has searchable endpoints, valid downloadable references 
   const spec=await (await page.request.get('/openapi.json')).json();expect(spec.openapi).toBe('3.1.0');
   function check(value:unknown){if(!value||typeof value!=='object')return;for(const [key,child] of Object.entries(value)){if(key==='$ref'){let target:any=spec;for(const part of String(child).slice(2).split('/'))target=target?.[part];expect(target).toBeTruthy();}else check(child);}}
   check(spec);
+  expect(spec.info.version).toBe('1.5.0');
+  expect(spec.paths['/api/sso/token'].post.requestBody.content['application/json'].schema.oneOf).toHaveLength(2);
+  expect(spec.components.schemas.ExchangeRequest.required).not.toContain('request_refresh_token');
+  await page.getByRole('textbox',{name:'ค้นหา Endpoint'}).fill('/api/sso/token');
+  const tokenEndpoint=page.locator('#exchangeCode');
+  await expect(tokenEndpoint.getByRole('cell',{name:'request_refresh_token',exact:false})).toBeVisible();
+  await expect(tokenEndpoint.getByRole('row').filter({hasText:'body · refresh_token'})).toHaveCount(2);
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.setViewportSize({width:1440,height:1000});
   await page.getByRole('textbox',{name:'ค้นหา Endpoint'}).fill('introspect');await expect(page.locator('.api-endpoint')).toHaveCount(1);
   await page.locator('.api-endpoint').scrollIntoViewIfNeeded();await page.screenshot({path:'test-results/api-docs-desktop.png'});
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authorizationSchema } from '../services/authorizationRequest.js';
 import { audit, HttpError } from '../middleware/security.js';
 import { hashToken } from '../services/crypto.js';
-import { ssoModel, SsoModelError, type SsoModel } from '../models/ssoModel.js';
+import { ssoModel, SsoModelError, type SsoModel, type SsoAuditWriter } from '../models/ssoModel.js';
 import { config } from '../config.js';
 import { IntrospectionCache } from '../services/introspectionCache.js';
 import { claimScopeNames, normalizePhone, scopesWithin } from '../services/claimScopes.js';
@@ -13,7 +13,9 @@ const opaqueToken = /^[A-Za-z0-9_-]{43}$/;
 const exchangeSchema = z.object({
   grant_type: z.literal('authorization_code'), code: z.string().regex(opaqueToken),
   redirect_uri: z.string().min(1).max(2048), code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+  request_refresh_token:z.boolean().optional(),
 }).strict();
+const refreshSchema=z.object({grant_type:z.literal('refresh_token'),refresh_token:z.string().regex(opaqueToken)}).strict();
 const introspectionSchema = z.object({ token: z.string().min(1).max(512) }).strict();
 const consentRequestSchema = z.object({request:z.string().regex(opaqueToken)}).strict();
 const consentDecisionSchema = consentRequestSchema.extend({approved:z.boolean(),scopes:z.array(z.enum(claimScopeNames)).max(7)}).strict();
@@ -58,7 +60,7 @@ function action(handler: (req: Request, res: Response) => Promise<void>): Reques
           : error.code === 'insufficient_scope' ? 'API key does not permit this operation'
             : error.code === 'invalid_scope' ? 'Requested data is not permitted by the service policy or consent'
             : error.code === 'access_denied' ? 'Account, session or consent request is no longer authorized; start again from the service'
-              : 'Authorization code is invalid, expired, used, or does not match this request';
+              : 'Grant is invalid, expired, used, revoked, or does not match this request';
         throw new HttpError(status, message, error.code);
       }
       throw error;
@@ -136,12 +138,20 @@ export function createSsoControllers(model: SsoModel = ssoModel, recordAudit: ty
 
     token: action(async (req, res) => {
       const apiKeyHash = apiKey(req);
-      if (req.body?.grant_type !== 'authorization_code') {
-        throw new HttpError(400, 'Only the authorization_code grant is supported', 'unsupported_grant_type');
+      const record:SsoAuditWriter=(conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn);
+      let token;
+      if(req.body?.grant_type==='refresh_token'){
+        const {refresh_token}=parse(refreshSchema,req.body);
+        token=await model.refreshAccessToken({apiKeyHash,refreshTokenHash:hashToken(refresh_token)},record);
+      }else if(req.body?.grant_type==='authorization_code'){
+        const {code,redirect_uri:redirectUri,code_verifier:verifier,request_refresh_token:requestRefreshToken}=parse(exchangeSchema,req.body);
+        token=await model.exchangeAuthorizationCode({apiKeyHash,codeHash:hashToken(code),redirectUri,verifier,
+          ...(requestRefreshToken===undefined?{}:{requestRefreshToken})},record);
+      }else{
+        throw new HttpError(400,'Supported grants are authorization_code and refresh_token','unsupported_grant_type');
       }
-      const { code, redirect_uri: redirectUri, code_verifier: verifier } = parse(exchangeSchema, req.body);
-      const token = await model.exchangeAuthorizationCode({ apiKeyHash, codeHash: hashToken(code), redirectUri, verifier },(conn,event,target,metadata)=>recordAudit(req,event,target,metadata,conn));
-      res.json({ access_token: token.accessToken, token_type: 'Bearer', expires_in: token.expiresIn, scope: token.scope });
+      res.json({access_token:token.accessToken,token_type:'Bearer',expires_in:token.expiresIn,scope:token.scope,
+        ...(token.refreshToken?{refresh_token:token.refreshToken,refresh_expires_in:token.refreshExpiresIn}:{})});
     }),
 
     introspect: action(async (req, res) => {

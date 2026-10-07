@@ -15,9 +15,13 @@ export async function revokeServiceSession(req: Request, res: Response) {
       AND a.revoked_at IS NULL FOR UPDATE`, [req.service!.apiKeyId, req.service!.applicationId], connection);
     const scopes = key && (typeof key.scopes==='string'?JSON.parse(key.scopes):key.scopes);
     if (!Array.isArray(scopes) || !scopes.includes('token:revoke')) throw new HttpError(401,'Invalid service credential','invalid_client');
-    const [grant] = await query<{sessionId:string}>(`SELECT session_id AS sessionId FROM access_tokens
+    let [grant] = await query<{sessionId:string}>(`SELECT session_id AS sessionId FROM access_tokens
       WHERE token_hash=? AND application_id=? FOR UPDATE`, [hashToken(token),req.service!.applicationId], connection);
+    if(!grant)[grant]=await query<{sessionId:string}>(`SELECT f.session_id AS sessionId FROM refresh_tokens r
+      JOIN sso_refresh_families f ON f.id=r.family_id WHERE r.token_hash=? AND f.application_id=? FOR UPDATE`,
+      [hashToken(token),req.service!.applicationId],connection);
     if (!grant) return;
+    await execute('UPDATE sso_refresh_families SET revoked_at=UTC_TIMESTAMP(3) WHERE application_id=? AND session_id=? AND revoked_at IS NULL', [req.service!.applicationId,grant.sessionId], connection);
     await execute('UPDATE access_tokens SET revoked_at=UTC_TIMESTAMP(3) WHERE application_id=? AND session_id=? AND revoked_at IS NULL', [req.service!.applicationId,grant.sessionId], connection);
     await execute('DELETE FROM authorization_codes WHERE application_id=? AND session_id=?', [req.service!.applicationId,grant.sessionId], connection);
     await audit(req,'sso.session.revoked',req.service!.applicationId,{scope:'application_session'},connection);

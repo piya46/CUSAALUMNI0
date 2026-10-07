@@ -4,7 +4,7 @@
 
 เพิ่ม `POST /api/sso/revoke` รับ `{"token":"<ACCESS_TOKEN>"}` พร้อม X-API-Key ที่มี scope `token:revoke` ถอน token/code ของ session เดียวกันเฉพาะ Service เจ้าของคีย์ ไม่ลบ session กลาง ไม่กระทบ Service อื่นและไม่ห้าม login ใหม่ ตอบ `200 {"ok":true}` รวม unknown/cross-app token BFF ต้องทำลาย local session/cache ของตนเองด้วย คีย์เดิมไม่ได้รับ scope เพิ่มอัตโนมัติ รายละเอียดและตัวอย่างอยู่ใน [OpenAPI](../web/public/openapi.json)
 
-API นี้เป็น SSO สำหรับระบบที่ผู้ดูแลอนุมัติ ใช้ authorization code + PKCE S256, Google Login, MFA และ Consent ก่อนออก token เป็น **custom first-party SSO API** ไม่ใช่ OpenID Connect provider แบบสมบูรณ์: ไม่มี discovery, ID token, refresh token หรือ dynamic client registration
+API นี้เป็น SSO สำหรับระบบที่ผู้ดูแลอนุมัติ ใช้ authorization code + PKCE S256, Google Login, MFA และ Consent ก่อนออก token เป็น **custom first-party SSO API** ไม่ใช่ OpenID Connect provider แบบสมบูรณ์: ไม่มี discovery, ID token หรือ dynamic client registration รองรับ refresh token แบบ opt-in ที่หมุนใหม่ทุกครั้งและหมดอายุภายใน MFA session เดิม (API 1.5; migration 010)
 
 ## เลือกข้อมูลที่จะรับและขอ Consent (migration 008)
 
@@ -79,7 +79,7 @@ X-API-Key: <SERVER_SIDE_KEY_WITH_IDENTITY_READ>
 | --- | --- | --- |
 | `GET /api/sso/login-context` | ไม่ต้องมี session; ตรวจ authorization parameters เดียวกับ authorize | ชื่อ/Origin ของแอปที่ลงทะเบียนและ internal returnTo สำหรับหน้า Login |
 | `GET /api/sso/authorize` | CUSA session ที่ผ่าน MFA | ไป `/consent` ก่อน; อนุมัติแล้วจึงกลับ callback พร้อม `code` และ `state` |
-| `POST /api/sso/token` | `X-API-Key`, scope `identity:read` | Opaque bearer token อายุสูงสุด 300 วินาที |
+| `POST /api/sso/token` | `X-API-Key`, scope `identity:read` | แลก code หรือหมุน refresh token; access token อายุสูงสุด 300 วินาที |
 | `POST /api/sso/introspect` | `X-API-Key`, scope `token:introspect` | `{active:false}` หรือข้อมูลผู้ใช้และ `aud` ของ application |
 | `GET /api/sso/userinfo` | `Authorization: Bearer ACCESS_TOKEN` | `{sub,aud,roles,scope,...}` และข้อมูลที่ผู้ใช้อนุมัติ |
 | `OPTIONS /api/sso/userinfo` | Origin ของ application ที่ยังใช้งาน | CORS preflight สำหรับ GET และ Authorization เท่านั้น |
@@ -88,7 +88,7 @@ Authorization code มีอายุ 90 วินาที ใช้ได้�
 
 Callback ต้องตรงกับที่ลงทะเบียนทุกตัวอักษร ไม่มี wildcard เมื่อ callback หรือ request ไม่ถูกต้อง API จะตอบ JSON error โดยไม่ redirect ผู้ใช้ที่ยังไม่ login/ยังไม่ผ่าน MFA จะไปหน้า `/login` ของ CUSA SSO พร้อม internal `returnTo` ที่ผ่านการตรวจแล้ว
 
-Token เป็นค่า opaque จาก `crypto.randomBytes(32)` (256-bit CSPRNG) แล้ว encode base64url เป็น 43 ตัวอักษร ฐานข้อมูลเก็บเฉพาะ HMAC-SHA-256 digest ที่ใช้ secret นอกฐานข้อมูล ต้องเรียก introspection เพื่อดูสถานะ Query ตรวจ session ที่ผ่าน MFA, อายุ session/token, Allowlist สำหรับบัญชีภายใน, สถานะ soft delete, สมาชิก/Role ใน Service และ application API key แต่ละชุดตรวจได้เฉพาะ token ของ application ตัวเอง การ revoke API key หยุดการแลก code/ตรวจ token ด้วย key นั้น; token ที่ออกไปแล้วจะหมดอายุภายใน 5 นาทีหรือถูกยกเลิกผ่าน session/application
+Token เป็นค่า opaque จาก `crypto.randomBytes(32)` (256-bit CSPRNG) แล้ว encode base64url เป็น 43 ตัวอักษร ฐานข้อมูลเก็บเฉพาะ HMAC-SHA-256 digest ที่ใช้ secret นอกฐานข้อมูล ต้องเรียก introspection เพื่อดูสถานะ Query ตรวจ session ที่ผ่าน MFA, อายุ session/token, Allowlist สำหรับบัญชีภายใน, สถานะ soft delete, สมาชิก/Role ใน Service และ application API key แต่ละชุดตรวจได้เฉพาะ token ของ application ตัวเอง การ revoke API key หยุดการแลก code/refresh/ตรวจ token ด้วย key นั้น; access token ที่ออกพร้อม refresh ผูกกับ key ที่ออกให้และหยุดใช้เมื่อ key ถูก revoke ด้วย ส่วน access token แบบเดิมที่ไม่ได้ opt-in จะหมดอายุภายใน 5 นาทีหรือถูกยกเลิกผ่าน session/application
 
 Introspection มี LRU cache 10,000 entries และรวมคำขอพร้อมกันของ `(apiKeyHash,tokenHash)` เดียวกัน TTL สูงสุด 5 วินาที โดยไม่เกินเวลา expiry ที่เร็วที่สุดของ token, session และ API key (`exp` ใน response เป็น effective expiry นี้) การถอนสิทธิ์จึงอาจช้าสูงสุด 5 วินาที ตั้ง `INTROSPECTION_CACHE_SECONDS=0` เมื่อต้องตรวจทุกครั้ง ส่วน userinfo ไม่มี cache และตรวจสถานะปัจจุบันทุกคำขอ ไม่ cache ผลล้มเหลว/ไม่มีสิทธิ์ ข้อมูลและ token ไม่ถูกส่งผ่าน browser cache
 
@@ -119,6 +119,42 @@ X-API-Key: <server-side secret>
 ```json
 {"active":true,"sub":"<user UUID>","email":"person@example.com","name":"Person","given_name":"Person","family_name":"","department":"Finance","roles":["viewer"],"exp":2000000000,"aud":"<application UUID>","scope":"identity:read profile email"}
 ```
+
+## Refresh token ภายในอายุ MFA session เดิม
+
+เปิดใช้เฉพาะ Service ที่พร้อมเก็บและหมุน token ใน backend โดยเพิ่ม `"request_refresh_token": true` ใน JSON ตอนแลก authorization code ข้อกำหนด PKCE, callback, API key, MFA และ Consent ยังคงเดิม หากไม่ส่งหรือส่ง `false` จะได้ access token อย่างเดียวตามตัวอย่างเดิม ไม่ต้องเพิ่ม `.env` ที่ CUSA
+
+```json
+{"grant_type":"authorization_code","code":"<CODE>","redirect_uri":"https://portal.example.com/auth/callback","code_verifier":"<ORIGINAL_VERIFIER>","request_refresh_token":true}
+```
+
+ตัวอย่างผลลัพธ์ (ค่าจำลอง อายุจริงขึ้นกับเวลาที่เหลือ):
+
+```json
+{"access_token":"<NEW_ACCESS_TOKEN>","token_type":"Bearer","expires_in":300,"scope":"identity:read profile email","refresh_token":"<NEW_REFRESH_TOKEN>","refresh_expires_in":1800}
+```
+
+ก่อน access token หมดอายุ ให้ backend ส่ง refresh token ล่าสุดด้วย `X-API-Key` **ชุดเดียวกับตอนออก** และ scope `identity:read`:
+
+```http
+POST /api/sso/token
+Content-Type: application/json
+X-API-Key: <same issuing backend key>
+
+{"grant_type":"refresh_token","refresh_token":"<CURRENT_REFRESH_TOKEN>"}
+```
+
+ผลตอบกลับมี access token และ refresh token ใหม่เสมอ ต้องแทนคู่เดิมพร้อมกันแบบ atomic แล้วตรวจ introspection ของ access token ใหม่ก่อนอนุญาตงาน Scope คงตาม Consent เดิม ห้ามส่ง `scope`, `client_id`, callback หรือ field อื่นใน refresh request การหมุน API key ต้องเริ่ม authorize ใหม่เพื่อผูกกับ key ชุดใหม่
+
+- อายุ access token ยังคงไม่เกิน 300 วินาที อายุ refresh เป็นวันหมดอายุตายตัว ไม่เกิน MFA session และ API key ณ ตอนออก ไม่เลื่อนออกเมื่อ refresh หรือเมื่อ session ถูกขยายภายหลัง ไม่มี `offline_access` และไม่ยืด MFA ผ่านการ refresh
+- ทุกครั้งตรวจ Consent/policy ปัจจุบัน, ผู้ใช้, Allowlist, สมาชิก/Role, เงื่อนไขเบอร์/LINE/MFA และเวลายืนยัน MFA เดิม เมื่อ session หมดอายุ, logout, ถอน Consent, เปลี่ยนสิทธิ์หรือเปลี่ยน policy ต้องเริ่ม authorize ใหม่
+- ทุก refresh ใช้ได้ครั้งเดียว เก็บ digest ของ token ที่ใช้ไปแล้วจนชุดนั้นหมดอายุ เมื่อพบ token เก่าถูกใช้ซ้ำด้วย key ที่ออกให้ จะ commit การยกเลิกทั้งชุด รวม access tokens ที่ออกจากชุดนั้น แล้วตอบ `400 invalid_grant` ไม่มีช่วงผ่อนผันให้ token เก่า
+- BFF ต้องใช้ lock ต่อชุด token ที่ครอบคลุมทุก instance: โหลดค่าล่าสุดหลังได้ lock → เรียก refresh ครั้งเดียว → บันทึกคู่ใหม่และ expiry แบบ atomic → ปล่อย lock ห้ามใช้เพียง lock ใน process เมื่อมีหลาย instance ห้ามให้ refresh ที่มาช้าสร้าง BFF session คืนหลัง logout (ใช้ session version/สถานะปิดประกอบการบันทึก)
+- หาก timeout, connection หลุด หรือไม่รู้ว่า response ถูกบันทึกสำเร็จหรือไม่ ให้ล้างสิทธิ์ local แล้วเริ่ม authorize ใหม่ **ห้าม retry refresh token เดิม** หากได้ `invalid_grant` ให้หยุดทันที ไม่ fallback ไป token เก่า ส่วน `invalid_client` ต้องตรวจ API key ไม่วน login ซ้ำ
+- เก็บทั้งคู่เฉพาะ server-side session store ที่จำกัดสิทธิ์และเข้ารหัสตามระบบจัดการ secret ของ Service ห้ามส่ง refresh token ให้ React, localStorage, URL, log หรือ analytics ใช้ cookie แบบ HttpOnly/Secure สำหรับ BFF session ตามเดิม
+- ตอน logout ให้เรียก `POST /api/sso/revoke` ด้วย scope `token:revoke` และ `{ "token": "<ACCESS_OR_REFRESH_TOKEN>" }` เพื่อถอนทุกชุดใน session ของ Service นั้น พร้อมปิด BFF session/ล้าง cache ฝั่งตนเอง การถอนสิทธิ์ผ่าน introspection cache ยังอาจช้าไม่เกิน 5 วินาทีตามเดิม ไม่ได้ออกจาก Service อื่นหรือ Google
+
+ตัวอย่าง Node.js BFF ด้านล่างยังเป็นแบบ access token อย่างเดียว เมื่อเลือกใช้ refresh ต้องเพิ่มการเก็บคู่ token และ lock ตามข้อกำหนดข้างต้น แนวทาง rotation/client binding/reuse detection อ้างอิง [RFC 9700 §4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14); รูปแบบ JSON และ `request_refresh_token` เป็นสัญญาเฉพาะ CUSA
 
 ## หน้าเข้าสู่ระบบกลาง
 
@@ -354,14 +390,16 @@ Browser navigation หลัง BFF สร้างและเก็บ state/v
 
 ### POST `/api/sso/token`
 
-เรียกจาก BFF เท่านั้น ต้องมี identity:read และ callback/verifier เดิม ไม่รองรับ refresh_token/password/client_credentials; อย่า retry code เดิมเมื่อไม่ทราบผลการแลก
+เรียกจาก BFF เท่านั้น ต้องมี identity:read เลือก `authorization_code` พร้อม callback/verifier เดิม หรือ `refresh_token` พร้อม refresh token ล่าสุดและ key ชุดที่ออกให้ ไม่รองรับ password/client_credentials; ห้าม retry code/refresh เดิมเมื่อไม่ทราบผลการแลก
 
 | Field | Location | Required | Details |
 | --- | --- | --- | --- |
-| `grant_type` | body | yes |  ['authorization_code'] |
-| `code` | body | yes | Opaque credential: CSPRNG 32 bytes, base64url without padding  |
-| `redirect_uri` | body | yes | Callback เดียวกับ authorize  |
-| `code_verifier` | body | yes | PKCE verifier เดิม ห้ามสร้างใหม่ที่ callback  |
+| `grant_type` | body | yes | `authorization_code` หรือ `refresh_token` |
+| `code` | body | เฉพาะ authorization_code | Opaque credential: CSPRNG 32 bytes, base64url without padding |
+| `redirect_uri` | body | เฉพาะ authorization_code | Callback เดียวกับ authorize |
+| `code_verifier` | body | เฉพาะ authorization_code | PKCE verifier เดิม ห้ามสร้างใหม่ที่ callback |
+| `request_refresh_token` | body | optional เฉพาะ authorization_code | boolean; ค่าเริ่มต้น false |
+| `refresh_token` | body | เฉพาะ refresh_token | Token ล่าสุด 43 ตัวอักษร; ห้ามส่งร่วมกับ field ของ code grant |
 
 ```sh
 curl --request POST "$SSO_ORIGIN/api/sso/token" \
@@ -455,7 +493,7 @@ curl "$SSO_ORIGIN/api/sso/userinfo" \
 - โควตา `/token` + `/introspect` รวมกันต่อ Application 3,000/min และต่อ API key 1,500/min; local coarse limit 12,000/min/IP/instance คีย์ผิดไม่เข้าถึง introspection cache
 - Introspection cache สูงสุด 5 วินาทีและไม่เกิน effective expiry มี single-flight เฉพาะคีย์เดียวกัน ไม่รับประกันทุก request ใช้ SQL รวมเพียงหนึ่งครั้ง: ยังมีการตรวจ API key และ shared quota ก่อน cache
 - ไม่เพิ่ม cache ฝั่ง BFF หากต้องการ revoke delay ตามขอบเขตข้างต้น ปิด server cache ด้วย INTROSPECTION_CACHE_SECONDS=0 หากต้องการตรวจ live ทุกครั้ง และใช้ NTP แทนต่อเวลา token ด้วย grace period
-- Logout ของ BFF ลบ session/token ฝั่ง BFF ผ่าน POST+CSRF ไม่ได้ออกจาก Google หรือทุก Service ไม่มี token revocation endpoint สำหรับ client; Admin ถอน session/Application/สมาชิก Service ได้
+- Logout ของ BFF ลบ session/token ฝั่ง BFF ผ่าน POST+CSRF และเรียก `/api/sso/revoke` ด้วย scope `token:revoke` เพื่อถอน access/refresh ของ session เฉพาะ Service นั้น ไม่ได้ออกจาก Google หรือทุก Service; Admin ถอน session/Application/สมาชิก Service ได้
 - Callback ไม่มี analytics และ reverse proxy access log ต้องไม่บันทึก query ของ auth/callback โดยที่ token/state/code/verifier ไม่เข้า APM/logs
 - ตัวอย่าง BFF รองรับหนึ่ง login flow ต่อ session; flow ใหม่แทน flow เดิม หากต้องรองรับหลายแท็บ ใช้ persistent flow store ผูก session+state พร้อม atomic consume, TTL และ bounded count ก่อนนำขึ้น production
 

@@ -72,6 +72,7 @@ export async function listMembers(applicationId: string, options: Pagination) {
     meta: { total: Number(total), totalPages: Math.ceil(Number(total) / options.limit), currentPage: options.page, limit: options.limit } };
 }
 async function revokeCredentials(applicationId: string, userId: string, conn: PoolConnection) {
+  await execute('UPDATE sso_refresh_families SET revoked_at=UTC_TIMESTAMP(3) WHERE application_id=? AND user_id=? AND revoked_at IS NULL', [applicationId, userId], conn);
   await execute('UPDATE access_tokens SET revoked_at=UTC_TIMESTAMP(3) WHERE application_id=? AND user_id=? AND revoked_at IS NULL', [applicationId, userId], conn);
   await execute('DELETE FROM authorization_codes WHERE application_id=? AND user_id=?', [applicationId, userId], conn);
 }

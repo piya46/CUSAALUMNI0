@@ -28,6 +28,7 @@ function makeApp(overrides: Partial<SsoModel> = {}, actor?: Identity) {
     enrollmentContext: async()=>({ready:true,application:{id:appId,name:'People Portal'},requirements:{phone:false,line:false,minimumMfa:'standard'},missing:[],enrolled:true,blocked:false,registration:'closed',policyVersion:1,pendingDays:14,inactiveDays:null,noticeDays:30,lifecycleMode:'preview',totpEnabled:true}),
     beginAuthorization: async () => code,
     exchangeAuthorizationCode: async () => ({ accessToken: 'new-access-token', expiresIn: 300,scope:'identity:read profile email' }),
+    refreshAccessToken: async () => { throw new SsoModelError('invalid_grant'); },
     introspectToken: async () => ({ active: false }),
     getUserInfo: async () => ({ given_name: 'Person', family_name: '', department: 'IT', roles: ['viewer'], aud: appId, sub: 'user-1', email: identity.email, name: identity.name,
       scope:'identity:read profile email',email_verified: true, applicationOrigin: 'https://portal.example.com' }),
@@ -144,6 +145,46 @@ test('malformed verifier and replayed/expired/mismatched grant never issue a tok
     .send({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, code_verifier: verifier });
   assert.equal(replay.status, 400);
   assert.equal(replay.body.code, 'invalid_grant');
+});
+
+test('refresh is opt-in at code exchange and uses only hashed backend credentials',async()=>{
+  const refresh=randomBytes(32).toString('base64url');
+  const pair={accessToken:code,expiresIn:120,scope:'identity:read',refreshToken:refresh,refreshExpiresIn:120};
+  const app=makeApp({exchangeAuthorizationCode:async input=>{
+    assert.equal(input.requestRefreshToken,true);return pair;
+  },refreshAccessToken:async input=>{
+    assert.deepEqual(input,{apiKeyHash:hashToken(apiKey),refreshTokenHash:hashToken(refresh)});return pair;
+  }});
+  const first=await request(app).post('/api/sso/token').set('X-API-Key',apiKey).send({
+    grant_type:'authorization_code',code,redirect_uri:redirectUri,code_verifier:verifier,request_refresh_token:true,
+  }).expect(200);
+  assert.equal(first.body.refresh_token,refresh);
+  const renewed=await request(app).post('/api/sso/token').set('X-API-Key',apiKey)
+    .send({grant_type:'refresh_token',refresh_token:refresh}).expect(200);
+  assert.deepEqual(renewed.body,{access_token:code,token_type:'Bearer',expires_in:120,scope:'identity:read',
+    refresh_token:refresh,refresh_expires_in:120});
+  assert.equal(renewed.headers['cache-control'],'no-store');
+  assert.equal(renewed.headers.pragma,'no-cache');
+  await request(app).post('/api/sso/token').send({grant_type:'refresh_token',refresh_token:refresh}).expect(401);
+});
+
+test('refresh requests reject scope escalation, extra fields and malformed credentials before issuance',async()=>{
+  const app=makeApp({refreshAccessToken:async()=>{throw new Error('Invalid input reached model');}});
+  for(const extra of [{scope:'identity:read phone'},{client_id:appId},{redirect_uri:redirectUri},{code},
+    {refresh_token:'short'},{refresh_token:[code]},{refresh_token:null}]){
+    const response=await request(app).post('/api/sso/token').set('X-API-Key',apiKey)
+      .send({grant_type:'refresh_token',refresh_token:code,...extra}).expect(400);
+    assert.equal(response.body.code,'invalid_request');
+  }
+  await request(app).post('/api/sso/token').set('X-API-Key',apiKey).send({grant_type:'authorization_code',
+    code,redirect_uri:redirectUri,code_verifier:verifier,request_refresh_token:'true'}).expect(400);
+  const replay=await request(makeApp()).post('/api/sso/token').set('X-API-Key',apiKey)
+    .send({grant_type:'refresh_token',refresh_token:code}).expect(400);
+  assert.equal(replay.body.code,'invalid_grant');
+  assert.equal(replay.headers['cache-control'],'no-store');
+  const unsupported=await request(app).post('/api/sso/token').set('X-API-Key',apiKey)
+    .send({grant_type:'password'}).expect(400);
+  assert.equal(unsupported.body.code,'unsupported_grant_type');
 });
 
 test('introspection authenticates API keys, enforces scope errors and returns inactive without identity disclosure', async () => {

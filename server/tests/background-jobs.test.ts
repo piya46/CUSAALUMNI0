@@ -104,10 +104,12 @@ test('credential cleanup bounds batches, filters expiry and never deletes audit/
     calls.push(sql); return [{ affectedRows: sql.includes('factor_challenges') ? 1000 : 0 }, []];
   } } as unknown as PoolConnection;
   const removed = await cleanupExpiredCredentials(connection);
-  assert.equal(removed.factor_challenges, 100_000); assert.equal(calls.length, 110);
-  assert.ok(calls.every(sql => /^DELETE FROM (factor_challenges|sessions|oauth_flows|otp_challenges|mfa_enrollments|authorization_codes|access_tokens|rate_limits|sso_consents|application_invitations|service_activity_receipts) WHERE (expires_at|reset_at)<UTC_TIMESTAMP\(3\) LIMIT 1000$/.test(sql)));
+  assert.equal(removed.factor_challenges, 100_000); assert.equal(calls.length, 111);
+  assert.ok(calls.every(sql => /^DELETE FROM (factor_challenges|sessions|oauth_flows|otp_challenges|mfa_enrollments|authorization_codes|access_tokens|sso_refresh_families|rate_limits|sso_consents|application_invitations|service_activity_receipts) WHERE (expires_at|reset_at)<UTC_TIMESTAMP\(3\) LIMIT 1000$/.test(sql)));
+  assert.ok(calls.some(sql=>sql.startsWith('DELETE FROM sso_refresh_families WHERE expires_at')));
+  assert.ok(calls.every(sql=>!sql.includes('consumed_at')), 'Retain consumed refresh digests for replay detection until family expiry');
   const abort = new AbortController(); abort.abort();
-  await assert.rejects(cleanupExpiredCredentials(connection, abort.signal)); assert.equal(calls.length, 110);
+  await assert.rejects(cleanupExpiredCredentials(connection, abort.signal)); assert.equal(calls.length, 111);
 });
 
 test('operations diagnostics redact raw grants and retain alerts for broad privileges, backlog and overdue evidence', async () => {

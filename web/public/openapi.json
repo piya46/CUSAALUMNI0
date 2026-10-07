@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CUSA SSO API",
-    "version": "1.4.0",
-    "description": "Custom first-party SSO: Authorization Code + PKCE S256, opaque tokens, application-scoped roles. Not a full OAuth/OIDC provider; no discovery, ID token, refresh token or dynamic registration. Examples are placeholders; never paste production secrets into browser documentation."
+    "version": "1.5.0",
+    "description": "Custom first-party SSO: Authorization Code + PKCE S256, opaque tokens, application-scoped roles. Not a full OAuth/OIDC provider; no discovery, ID token or dynamic registration. Optional rotating refresh tokens are bound to the original MFA session, consent and issuing API key; no offline access. Examples are placeholders; never paste production secrets into browser documentation."
   },
   "servers": [
     {
@@ -483,8 +483,8 @@
     "/api/sso/token": {
       "post": {
         "operationId": "exchangeCode",
-        "summary": "แลก authorization code",
-        "description": "เรียกจาก BFF เท่านั้น ต้องมี identity:read และ callback/verifier เดิม ไม่รองรับ refresh_token/password/client_credentials; อย่า retry code เดิมเมื่อไม่ทราบผลการแลก",
+        "summary": "แลก code หรือหมุน refresh token",
+        "description": "BFF เท่านั้น ต้องมี X-API-Key scope identity:read. authorization_code ต้องใช้ callback/verifier เดิม; ขอ refresh token ด้วย request_refresh_token:true. refresh_token ต้องใช้ API key ชุดที่ออกให้และหมุนใหม่ทุกครั้ง โดยไม่ต่ออายุ MFA session หรือเพิ่ม scope. ใช้ token เดิมซ้ำยกเลิกทั้งชุด; ห้าม refresh พร้อมกันหรือ retry เมื่อไม่ทราบผล. ไม่รองรับ password/client_credentials.",
         "tags": [
           "Tokens"
         ],
@@ -498,7 +498,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ExchangeRequest"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ExchangeRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  }
+                ]
               }
             }
           }
@@ -511,11 +518,25 @@
                 "schema": {
                   "$ref": "#/components/schemas/TokenResponse"
                 },
-                "example": {
-                  "access_token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                  "token_type": "Bearer",
-                  "expires_in": 300,
-                  "scope": "identity:read profile email"
+                "examples": {
+                  "Access only": {
+                    "value": {
+                      "access_token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                      "token_type": "Bearer",
+                      "expires_in": 300,
+                      "scope": "identity:read profile email"
+                    }
+                  },
+                  "Opt-in or rotation": {
+                    "value": {
+                      "access_token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                      "token_type": "Bearer",
+                      "expires_in": 300,
+                      "scope": "identity:read profile email",
+                      "refresh_token": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                      "refresh_expires_in": 1800
+                    }
+                  }
                 }
               }
             }
@@ -646,6 +667,10 @@
           {
             "lang": "curl",
             "source": "curl --request POST \"$SSO_ORIGIN/api/sso/token\" \\\n  --header 'Content-Type: application/json' \\\n  --header \"X-API-Key: $SSO_API_KEY\" \\\n  --data '{\"grant_type\":\"authorization_code\",\"code\":\"<CODE>\",\"redirect_uri\":\"https://portal.example.com/auth/callback\",\"code_verifier\":\"<ORIGINAL_VERIFIER>\"}'"
+          },
+          {
+            "lang": "curl (refresh)",
+            "source": "curl --request POST \"$SSO_ORIGIN/api/sso/token\" --header 'Content-Type: application/json' --header \"X-API-Key: $SSO_API_KEY\" --data '{\"grant_type\":\"refresh_token\",\"refresh_token\":\"<CURRENT_REFRESH_TOKEN>\"}'"
           }
         ]
       }
@@ -1196,7 +1221,7 @@
       "post": {
         "operationId": "revokeServiceSession",
         "summary": "ถอน Token ของเซสชันเฉพาะ Service ของคุณ",
-        "description": "BFF ใช้ API key ที่มี token:revoke ส่ง access token ที่ถืออยู่ ระบบถอน access tokens และ authorization codes ของ session เดียวกันเฉพาะ application ของคีย์ ไม่ลบ SSO session ไม่กระทบ Service อื่น ไม่ห้าม login ใหม่ Unknown/cross-app token ตอบ ok เหมือนกัน; cache เดิมอาจมีผลไม่เกิน 5 วินาที ต้องทำลาย BFF session และล้าง cache ของตัวเองด้วย",
+        "description": "BFF ใช้ API key ที่มี token:revoke ส่ง access หรือ refresh token ที่ถืออยู่ ระบบถอน refresh families, access tokens และ authorization codes ของ session เดียวกันเฉพาะ application ของคีย์ ไม่ลบ SSO session ไม่กระทบ Service อื่น ไม่ห้าม login ใหม่ Unknown/cross-app token ตอบ ok เหมือนกัน; cache เดิมอาจมีผลไม่เกิน 5 วินาที ต้องทำลาย BFF session และล้าง cache ของตัวเองด้วย",
         "tags": [
           "Tokens"
         ],
@@ -5404,6 +5429,11 @@
             "type": "string",
             "description": "PKCE verifier เดิม ห้ามสร้างใหม่ที่ callback",
             "pattern": "^[A-Za-z0-9._~-]{43,128}$"
+          },
+          "request_refresh_token": {
+            "type": "boolean",
+            "default": false,
+            "description": "Optional opt-in. Lifetime cannot exceed the original MFA session or issuing API key. Not an offline_access grant."
           }
         },
         "required": [
@@ -5430,12 +5460,23 @@
           },
           "expires_in": {
             "type": "integer",
-            "const": 300,
+            "minimum": 1,
+            "maximum": 300,
             "description": "อายุสูงสุด; session ต้นทางอาจหมดอายุก่อน"
           },
           "scope": {
             "type": "string",
             "description": "Space-separated scopes actually approved by the user"
+          },
+          "refresh_token": {
+            "type": "string",
+            "description": "Only returned on opt-in or refresh. Store server-side and atomically replace on every rotation.",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "refresh_expires_in": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Remaining seconds until the original absolute refresh expiry; never sliding. Present with refresh_token."
           }
         },
         "required": [
@@ -5704,6 +5745,27 @@
           "inactiveDays",
           "noticeDays",
           "recoveryDays"
+        ],
+        "additionalProperties": false
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "properties": {
+          "grant_type": {
+            "type": "string",
+            "enum": [
+              "refresh_token"
+            ]
+          },
+          "refresh_token": {
+            "type": "string",
+            "description": "Opaque credential: CSPRNG 32 bytes, base64url without padding",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "required": [
+          "grant_type",
+          "refresh_token"
         ],
         "additionalProperties": false
       }

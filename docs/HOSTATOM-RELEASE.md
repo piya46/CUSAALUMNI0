@@ -1,5 +1,9 @@
 # อัปโหลด CUSA SSO รุ่นนี้บน HostAtom / Plesk
 
+เพิ่ม refresh token 7 ตุลาคม 2026: API 1.5 รองรับ `request_refresh_token:true` ตอนแลก code และ `grant_type:refresh_token` ที่ `/api/sso/token` โดยใช้ API key ชุดเดิม หมุน token ทุกครั้ง ตรวจสิทธิ์/MFA/Consent ปัจจุบัน และยกเลิกทั้งชุดเมื่อใช้ token เก่าซ้ำ อายุไม่เกิน MFA session/key เดิมและไม่เลื่อนออก แอปที่ไม่ opt-in ใช้ flow เดิม ดู [คู่มือ Refresh token](SSO-INTEGRATION.md#refresh-token-ภายในอายุ-mfa-session-เดิม)
+
+รอบนี้ต้อง migrate ถึง **`010_refresh_tokens.sql`** และเพิ่ม runtime grants ของ `sso_refresh_families` / `refresh_tokens` ตามไฟล์ SQL ก่อน Restart ไม่ต้องเพิ่มหรือเปลี่ยน `.env` Build ทั้ง server/web เพื่ออัปเดต API และคู่มือ ระบบลูกต้องเก็บ token ที่ backend, หมุนครั้งละคำขอด้วย lock ร่วมทุก instance และบันทึกคู่ใหม่แบบ atomic จึงค่อย opt-in Cleanup เก็บ digest ของ token ที่ใช้แล้วไว้ตรวจ replay จนชุดหมดอายุ
+
 แก้จังหวะ Loading ของ LINE 6 ตุลาคม 2026: เริ่ม Loading Animation API หลังตรวจคำขอและผู้ส่งครบ ก่อนบันทึกผล/Audit ทำงานคู่กับ transaction เพื่อให้ครอบคลุมช่วงประมวลผล จากเดิมเริ่มหลัง commit แล้ว ไม่รอ API โหลดขณะถือ database lock และยังส่งการ์ดผลหลัง commit สำเร็จเท่านั้น อัปโหลด server build ใหม่แล้ว Restart App ไม่มี `.env`, migration หรือสัญญา Central webhook เปลี่ยน
 
 ปรับ UI ทั้งเว็บและข้อความ 6 ตุลาคม 2026: เมนูแยกหมวดผู้ใช้/แอป/ความปลอดภัย ค้นหาด้วยชื่อหรือฟังก์ชันผ่าน Ctrl/⌘ K ได้ หน้าแรกมีทางลัดครบทุกเมนูตามสิทธิ์ หน้าตั้งค่าบริการขยายฟอร์มได้ และปรับ Login/MFA/Consent ให้ใช้รูปแบบเดียวกัน พร้อมรองรับจอแคบและ reduced motion การ์ด LINE และอีเมล OTP ใช้โทนเดียวกับเว็บ แยกบริการ รหัสอ้างอิง ขั้นตอน และผลยืนยัน ดู [อีเมลตัวอย่าง](previews/otp-email.html) และ [LINE Flex payload ข้อมูลจำลอง](previews/line-mfa.json)
@@ -12,7 +16,7 @@
 
 ปรับปรุง 5 ตุลาคม 2026: การผูกเบอร์ซ้ำรองรับคำขอยืนยันพร้อมกันแล้ว โดยใช้ UNIQUE เดิมจาก migration 006 เก็บเจ้าของเบอร์เดิมและ Audit เมื่อปฏิเสธ หน้าเว็บล้างคำขอที่ใช้แล้วแต่ยังคง cooldown ไม่มี migration หรือ `.env` เพิ่มสำหรับการแก้ส่วนนี้ อัปโหลด build ใหม่แล้ว Restart ตามขั้นตอนด้านล่าง
 
-รุ่นนี้ต้อง migrate ถึง `009_service_accounts.sql` ก่อน Restart; migration 009 ไม่เพิ่มค่า `.env` หากยังไม่ได้ใช้ migration 008 ระบบจะเพิ่ม policy ใน `applications`, ตาราง `sso_consents` และ `consent_id` ใน code/token ด้วย ให้สิทธิ์ runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) ครบทั้งสองรุ่น
+Migration `009_service_accounts.sql` ยังคงเป็นข้อกำหนดพื้นฐานก่อน 010; migration 009 ไม่เพิ่มค่า `.env` หากยังไม่ได้ใช้ migration 008 ระบบจะเพิ่ม policy ใน `applications`, ตาราง `sso_consents` และ `consent_id` ใน code/token ด้วย ให้สิทธิ์ runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) ครบทุกรุ่น
 
 Migration 009 เพิ่มประเภทบัญชี นโยบายสมาชิก คำเชิญ และข้อมูลกิจกรรมแยก Service รวมถึง View `sso_login_accounts` ต้องให้บัญชี migration สร้าง View ได้ และให้ runtime SELECT บน View + สิทธิ์ตารางใหม่ตาม runtime-grants.sql ก่อน Restart ดู [ขั้นตอนตั้งนโยบาย](SERVICE-ACCESS.md#ตั้งนโยบายรับสมาชิก) ค่าเริ่มต้นปิดรับสมัคร และงานจัดการบัญชีไม่ใช้งานเป็น preview เท่านั้น ไม่มีการลบอัตโนมัติ
 
@@ -51,7 +55,7 @@ Node ต้องรองรับอย่างน้อย 22.12 เลื�
 3. ติดตั้ง dependencies ด้วย Node/npm ของ Plesk: `npm ci --omit=dev` เพราะ ZIP มี build แล้ว หากอัปโหลด source โดยไม่มี build ให้ใช้ `npm ci --include=dev` แล้ว `npm run build` ตามคู่มือเดิม ไม่คัดลอก node_modules จาก macOS
 4. ตรวจ `.env` ของ Host: NODE_ENV=production, HTTPS APP_ORIGIN หนึ่งค่า, INSTALL_ENABLED=false และ INSTALL_TOKEN ว่าง DB_HOST=localhost/127.0.0.1 กับ DB_TLS=false ใช้ได้เฉพาะเมื่อ Node และ MariaDB อยู่เครื่องเดียวกันตามข้อมูล Host เท่านั้น ห้ามใช้ public IP กับ DB_TLS=false ใน production
 5. ใน **Node.js → Run script** เลือก `deploy:check` หรือรัน `npm run deploy:check` จาก Terminal เป็นการตรวจไฟล์และค่าตั้งต้นแบบ offline; ไม่รัน SQL, ไม่ทดสอบ Google/Gmail และไม่แก้ `.env` Exit code 1 หมายถึงมีรายการ fail ที่ต้องแก้ตามชื่อ check
-6. ใช้บัญชี migration ที่มีสิทธิ์ DDL และ CREATE VIEW รัน `npm run db:migrate:production` จาก Application Root เพื่อเพิ่ม migrations ที่ยังไม่มีจนถึง 009 ห้ามแก้ checksum หรือไฟล์ migration ที่เคยใช้แล้ว ไม่รัน bootstrap ซ้ำสำหรับระบบเดิม
+6. ใช้บัญชี migration ที่มีสิทธิ์ DDL และ CREATE VIEW รัน `npm run db:migrate:production` จาก Application Root เพื่อเพิ่ม migrations ที่ยังไม่มีจนถึง 010 ห้ามแก้ checksum หรือไฟล์ migration ที่เคยใช้แล้ว ไม่รัน bootstrap ซ้ำสำหรับระบบเดิม
 7. เปลี่ยนกลับเป็นบัญชี runtime ตาม [runtime-grants.sql](../server/sql/runtime-grants.sql) แล้วรัน `npm run ops:check` ต้องไม่มี excessive grants, timezone ผิด, backlog หรือหลักฐานเกินกำหนด หาก Host ไม่ให้ตั้ง table grants ให้ HostAtom จัดสิทธิ์ให้ตามไฟล์นี้ก่อนยืนยันว่า audit เป็น append-only ในระดับ DB
 8. Restart App แล้วตรวจ `/api/ready` ผ่าน HTTPS, Google Login/OTP/Ref/TOTP และ Service callback ด้วยบัญชีทดสอบที่ได้รับอนุญาต การตรวจ offline ผ่านไม่ยืนยันว่าขั้นตอนเหล่านี้ทำงานบน Host แล้ว
 9. เปิดงานเบื้องหลังใน Node ตามหัวข้อถัดไป ตรวจ log การทำงานก่อนเปิดรับภาพจริง ยืนยันว่าไฟล์ใน MFA_EVIDENCE_DIR คงอยู่ข้าม restart/deploy และไม่อยู่ใต้ Document Root ของเว็บไซต์อื่นด้วย

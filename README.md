@@ -123,7 +123,7 @@ TOTP และ OTP policy อ้างอิงแนวทาง [OWASP Passwor
 
 อ่าน [คู่มือเชื่อมต่อ SSO](docs/SSO-INTEGRATION.md) และ [คู่มือ Audit](docs/AUDIT-OPERATIONS.md) สำหรับ BFF, PKCE, introspection, CORS และ archive
 
-API นี้เป็น SSO สำหรับแอปที่ admin อนุมัติ โดยใช้ `X-API-Key` เพื่อยืนยัน backend ของแอป **ยังไม่ใช่ OpenID Connect Provider ที่ผ่านการรับรอง** ไม่มี OIDC discovery, ID token หรือ refresh token ระบบลูกต้องเริ่ม authorization ใหม่หลัง access token 5 นาทีหมดอายุ (ใช้ session SSO ที่มีอยู่ได้)
+API นี้เป็น SSO สำหรับแอปที่ admin อนุมัติ โดยใช้ `X-API-Key` เพื่อยืนยัน backend ของแอป **ยังไม่ใช่ OpenID Connect Provider ที่ผ่านการรับรอง** ไม่มี OIDC discovery หรือ ID token Access token อายุสูงสุด 5 นาที; ระบบลูกเลือกขอ rotating refresh token ด้วย `request_refresh_token:true` ตอนแลก code ได้ โดยอายุไม่เกิน MFA session/key เดิมและใช้ API key ชุดที่ออกให้ ต้องเก็บและหมุนใน backend เท่านั้น ดู [คู่มือ Refresh token](docs/SSO-INTEGRATION.md#refresh-token-ภายในอายุ-mfa-session-เดิม) หากไม่ opt-in ให้เริ่ม authorization ใหม่เมื่อ access token หมดอายุ
 
 Introspection cache ผูกทั้ง API key hash และ token hash จำกัด 10,000 entries และรวมคำขอพร้อมกันของคีย์เดียวกัน TTL สูงสุด 5 วินาทีและไม่เกิน token expiry ค่า `INTROSPECTION_CACHE_SECONDS=0` ปิด cache เมื่อต้องการตรวจ revocation ทันที การเปิด cache ยอมรับการเปลี่ยนสิทธิ์ช้าสูงสุด 5 วินาที และควรใช้ Redis สำหรับ shared rate limit เพื่อลด SQL ในเส้นทางนี้ ไม่เพิ่ม grace period ที่ทำให้ token หมดอายุยังใช้ได้; ตั้งเวลาเครื่องด้วย NTP
 

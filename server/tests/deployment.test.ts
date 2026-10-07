@@ -9,7 +9,7 @@ import { resolveEvidenceDirectory } from '../src/services/evidenceDirectory.js';
 async function fixture(){
   const root=await mkdtemp(join(tmpdir(),'cusa-deploy-check-'));
   for(const name of ['public','server/dist','server/migrations','web/dist','web/public','var/evidence'])await mkdir(join(root,name),{recursive:true,mode:0o700});
-  for(const name of ['app.cjs','package-lock.json','server/dist/index.js','web/dist/index.html','server/migrations/004_security_hardening.sql','server/migrations/005_mfa_reset_evidence.sql','server/migrations/006_additional_factors.sql','server/migrations/007_waiting_room.sql','server/migrations/008_service_consent.sql','server/migrations/009_service_accounts.sql'])await writeFile(join(root,name),'fixture');
+  for(const name of ['app.cjs','package-lock.json','server/dist/index.js','web/dist/index.html','server/migrations/004_security_hardening.sql','server/migrations/005_mfa_reset_evidence.sql','server/migrations/006_additional_factors.sql','server/migrations/007_waiting_room.sql','server/migrations/008_service_consent.sql','server/migrations/009_service_accounts.sql','server/migrations/010_refresh_tokens.sql'])await writeFile(join(root,name),'fixture');
   await writeFile(join(root,'.env'),'NOT_A_REAL_SECRET=synthetic-value',{mode:0o600});
   return {root,config:{nodeEnv:'production',secureCookies:true,appOrigin:'https://example.test',configured:true,installEnabled:false,installToken:'',dbTls:false,dbHost:'127.0.0.1',dbCaFile:'',redisUrl:'',mfaEvidenceKey:Buffer.alloc(32,5).toString('base64'),encryptionKey:Buffer.alloc(32,7).toString('base64'),mfaEvidenceDir:join(root,'var/evidence')} as Parameters<typeof checkDeployment>[0]};
 }
